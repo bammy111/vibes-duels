@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tanks – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useRef,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const TKW=340,TKH=480,TKG=.18,TKVMAX=11,TKBLAST=26,TKTR=15,TKX=[50,290];
+function tkGen(){const h=[],p1=Math.random()*6.28,p2=Math.random()*6.28,p3=Math.random()*6.28;
+ for(let x=0;x<TKW;x++){const t=x/TKW;h[x]=300+26*Math.sin(t*6.28*1.3+p1)+15*Math.sin(t*6.28*2.9+p2)+7*Math.sin(t*6.28*6.1+p3)-(95+Math.random()*20)*Math.exp(-Math.pow((x-170)/50,2));}
+ for(const cx of TKX){let a=0;for(let x=cx-20;x<=cx+20;x++)a+=h[x];a/=41;for(let x=cx-26;x<=cx+26;x++){const w=Math.max(0,1-Math.max(0,Math.abs(x-cx)-18)/8);h[x]=h[x]*(1-w)+a*w;}}
+ for(let k=0;k<2;k++)for(let x=1;x<TKW-1;x++)h[x]=(h[x-1]+h[x]*2+h[x+1])/4;
+ return h.map(v=>Math.max(170,Math.min(440,v)));}
+const tkH=(h,x)=>h[Math.max(0,Math.min(TKW-1,Math.round(x)))];
+function tkCrater(h,cx,cy,r){for(let x=Math.max(0,Math.floor(cx-r));x<=Math.min(TKW-1,Math.ceil(cx+r));x++){const dx=x-cx;if(Math.abs(dx)<=r){const s=Math.sqrt(r*r-dx*dx);if(cy-s<=h[x]+.5)h[x]=Math.min(TKH-6,Math.max(h[x],cy+s));}}}
+function tkSim(h,sx,sy,ang,pow){const a=ang*Math.PI/180,v=pow/100*TKVMAX;let x=sx,y=sy,vx=Math.cos(a)*v,vy=-Math.sin(a)*v;
+ for(let i=0;i<2400;i++){x+=vx/3;y+=vy/3;vy+=TKG/3;if(x<0||x>=TKW||y>TKH+40)return{x,y,out:true};if(y>=h[Math.floor(x)])return{x,y:h[Math.floor(x)],out:false};}return{x,y,out:true};}
+const tkMuzzle=(t,ang)=>[t.x+Math.cos(ang*Math.PI/180)*19,t.y-12-Math.sin(ang*Math.PI/180)*19];
+function tkPlan(h,me,foe){let best=null;const tx=foe.x,ty=foe.y-8;
+ for(let a=8;a<=172;a+=2)for(let p=20;p<=100;p+=3){const[sx,sy]=tkMuzzle(me,a),r=tkSim(h,sx,sy,a,p);if(r.out)continue;
+  const d=Math.hypot(r.x-tx,r.y-ty),self=Math.hypot(r.x-me.x,r.y-(me.y-8));const sc=d+(self<TKBLAST+TKTR+6?200:0);if(!best||sc<best.sc)best={a,p,sc};}
+ return best||{a:135,p:60,sc:999};}
+function TanksGame({stake,pool,payout,onEnd}){
+ const cv=useRef(),endRef=useRef();endRef.current=onEnd;
+ const G=useRef(null);
+ if(!G.current){const h=tkGen(),first=Math.random()<.5?0:1;G.current={h,tank:[{x:TKX[0],y:tkH(h,TKX[0]),hp:100,ang:45,pow:55,dead:false},{x:TKX[1],y:tkH(h,TKX[1]),hp:100,ang:135,pow:55,dead:false}],turn:first,phase:first===0?'aim':'ai',proj:null,trail:[],boom:null,parts:[],floats:[],flash:null,over:false,ai:false,mark:[null,null],clouds:[30,150,260],api:{}};}
+ const [ui,setUi]=useState({turn:G.current.turn,msg:G.current.turn===0?'You won the toss! Set your angle and power, then FIRE.':'Chidi O. won the toss and fires first…',over:false,hp:[100,100],ang:45,pow:55,tick:0});
+ useEffect(()=>{
+  const g=G.current,c=cv.current,ctx=c.getContext('2d');ctx.scale(2,2);
+  const sync=m=>setUi(u=>({turn:g.turn,msg:m||u.msg,over:g.over,hp:[g.tank[0].hp,g.tank[1].hp],ang:Math.round(g.tank[0].ang),pow:Math.round(g.tank[0].pow),tick:u.tick+1}));
+  const flash=(t,col)=>{g.flash={t,col,life:70};};
+  const fire=(i)=>{const t=g.tank[i],[sx,sy]=tkMuzzle(t,t.ang),a=t.ang*Math.PI/180,v=t.pow/100*TKVMAX;g.proj={x:sx,y:sy,vx:Math.cos(a)*v,vy:-Math.sin(a)*v,who:i};g.trail=[];g.phase='fly';sync((i?'Chidi O.':'You')+' fired! ('+Math.round(t.ang)+'°, '+Math.round(t.pow)+'%)');};
+  const explode=(x,y,hitTank)=>{const who=g.proj.who;g.proj=null;g.mark[who]=[x,y];tkCrater(g.h,x,y,TKBLAST*.85);g.boom={x,y,f:0};
+   for(let n=0;n<26;n++)g.parts.push({x,y,vx:(Math.random()-.5)*5,vy:-Math.random()*4.5-.5,life:30+Math.random()*20,c:n%3?'#8B5A2B':'#F59E0B'});
+   let msg=who?'Chidi O. missed.':'Missed.';const dmgs=[];
+   g.tank.forEach((t,i)=>{if(t.dead)return;const d=Math.hypot(x-t.x,y-(t.y-8));if(d<TKBLAST+TKTR){const dmg=Math.max(9,Math.round(55*(1-d/(TKBLAST+TKTR))));t.hp=Math.max(0,t.hp-dmg);g.floats.push({x:t.x,y:t.y-30,t:'-'+dmg,life:50});dmgs.push([i,dmg]);}});
+   if(dmgs.length){const[i,dmg]=dmgs[0];msg=dmgs.length===2?'Direct blast hit both tanks!':(i===0?'You took '+dmg+' damage!':(who?'Chidi O. hit himself for '+dmg+'!':'Direct hit! −'+dmg+' to Chidi O.'));}
+   g.phase='boom';g.boomT=0;sync(msg);};
+  const settleTurn=()=>{
+   const dead=g.tank.map(t=>t.hp<=0);
+   if(dead[0]||dead[1]){g.tank.forEach((t,i)=>{if(dead[i]){t.dead=true;for(let n=0;n<40;n++)g.parts.push({x:t.x,y:t.y-8,vx:(Math.random()-.5)*7,vy:-Math.random()*6,life:50,c:n%2?'#F97316':'#374151'});}});
+    g.over=true;g.phase='done';const w=dead[0]&&dead[1]?0:dead[1]?1:2;
+    sync(w===0?'Both tanks destroyed — nobody wins. Stakes refunded.':w===1?'💥 Chidi O.’s tank is destroyed — you win!':'💥 Your tank is destroyed — Chidi O. wins!');setTimeout(()=>endRef.current(w),2600);return;}
+   g.turn=1-g.turn;g.phase=g.turn===0?'aim':'ai';g.ai=false;sync(g.turn===0?'Your turn — adjust angle & power, then FIRE.':"Chidi O.'s turn…");};
+  const aiPlay=()=>{if(g.over||g.turn!==1||g.phase!=='ai')return;const pl=tkPlan(g.h,g.tank[1],g.tank[0]);
+   g.aiTarget={a:Math.max(2,Math.min(178,pl.a+(Math.random()+Math.random()+Math.random()-1.5)*2*3.8)),p:Math.max(15,Math.min(100,pl.p*(1+(Math.random()+Math.random()+Math.random()-1.5)*2*.06)))};g.phase='aiaim';g.aiT=0;};
+  g.api={setAngle:v=>{if(g.phase!=='aim'||g.turn!==0)return;g.tank[0].ang=Math.max(0,Math.min(180,v));sync();},setPower:v=>{if(g.phase!=='aim'||g.turn!==0)return;g.tank[0].pow=Math.max(0,Math.min(100,v));sync();},fire:()=>{if(g.phase==='aim'&&g.turn===0)fire(0);}};
+  const tankDraw=(t,i)=>{if(t.dead)return;const col=i?'#60A5FA':'#FFC83D',dk=i?'#1E3A8A':'#92400E',sl=Math.atan2(tkH(g.h,t.x+9)-tkH(g.h,t.x-9),18);
+   ctx.save();ctx.translate(t.x,t.y);ctx.rotate(sl);ctx.fillStyle='#1F2937';ctx.beginPath();ctx.roundRect?ctx.roundRect(-15,-6,30,8,4):ctx.rect(-15,-6,30,8);ctx.fill();
+   ctx.fillStyle='#374151';for(let k=-10;k<=10;k+=10){ctx.beginPath();ctx.arc(k,-2,2.6,0,7);ctx.fill();}
+   ctx.fillStyle=col;ctx.strokeStyle=dk;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect?ctx.roundRect(-12,-14,24,10,4):ctx.rect(-12,-14,24,10);ctx.fill();ctx.stroke();ctx.restore();
+   ctx.fillStyle=col;ctx.strokeStyle=dk;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(t.x,t.y-12,7,0,7);ctx.fill();ctx.stroke();
+   const a=t.ang*Math.PI/180;ctx.strokeStyle=dk;ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(t.x,t.y-12);ctx.lineTo(t.x+Math.cos(a)*19,t.y-12-Math.sin(a)*19);ctx.stroke();ctx.strokeStyle=col;ctx.lineWidth=2.6;ctx.stroke();
+   const w=34,x=t.x-w/2,y=t.y-40;ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(x-1,y-1,w+2,7);ctx.fillStyle=t.hp>60?'#4ADE80':t.hp>30?'#FBBF24':'#EF4444';ctx.fillRect(x,y,w*t.hp/100,5);};
+  const draw=(now)=>{
+   const sk=ctx.createLinearGradient(0,0,0,TKH);sk.addColorStop(0,'#5BB6F0');sk.addColorStop(.6,'#BFE6FA');sk.addColorStop(1,'#E7F6FF');ctx.fillStyle=sk;ctx.fillRect(0,0,TKW,TKH);
+   ctx.fillStyle='rgba(120,160,200,.45)';ctx.beginPath();ctx.moveTo(0,330);[[40,260],[100,300],[160,240],[230,305],[290,255],[340,300]].forEach(([x,y])=>ctx.lineTo(x,y));ctx.lineTo(340,480);ctx.lineTo(0,480);ctx.fill();
+   ctx.fillStyle='rgba(255,255,255,.85)';g.clouds=g.clouds.map(x=>(x+.12)%420);g.clouds.forEach((x,i)=>{const cx=x-40,cy=60+i*38;ctx.beginPath();ctx.arc(cx,cy,12,0,7);ctx.arc(cx+14,cy-5,15,0,7);ctx.arc(cx+30,cy,11,0,7);ctx.fill();});
+   const tg=ctx.createLinearGradient(0,170,0,TKH);tg.addColorStop(0,'#7C4F27');tg.addColorStop(1,'#3E2611');ctx.beginPath();ctx.moveTo(0,TKH);for(let x=0;x<TKW;x++)ctx.lineTo(x,g.h[x]);ctx.lineTo(TKW,TKH);ctx.closePath();ctx.fillStyle=tg;ctx.fill();
+   ctx.strokeStyle='#4ADE80';ctx.lineWidth=4;ctx.lineJoin='round';ctx.beginPath();for(let x=0;x<TKW;x++)x?ctx.lineTo(x,g.h[x]):ctx.moveTo(x,g.h[x]);ctx.stroke();ctx.strokeStyle='#22C55E';ctx.lineWidth=2;ctx.stroke();
+   g.tank.forEach((t,i)=>{if(i===0||true)tankDraw(t,i);});
+   g.mark.forEach((m,i)=>{if(m){ctx.strokeStyle=i?'rgba(30,58,138,.8)':'rgba(146,64,14,.9)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(m[0]-4,m[1]-4);ctx.lineTo(m[0]+4,m[1]+4);ctx.moveTo(m[0]+4,m[1]-4);ctx.lineTo(m[0]-4,m[1]+4);ctx.stroke();}});
+   if(g.trail.length){ctx.fillStyle='rgba(60,60,60,.45)';g.trail.forEach((p,i)=>{if(i%3===0){ctx.beginPath();ctx.arc(p[0],p[1],1.6,0,7);ctx.fill();}});}
+   if(g.proj){ctx.beginPath();ctx.arc(g.proj.x,g.proj.y,3.6,0,7);ctx.fillStyle='#1F2937';ctx.fill();ctx.strokeStyle='#F59E0B';ctx.lineWidth=1.5;ctx.stroke();}
+   if(g.boom&&g.boom.f<24){const b=g.boom,k=b.f/24,r=TKBLAST*(.5+k*.9);const gr=ctx.createRadialGradient(b.x,b.y,2,b.x,b.y,r);gr.addColorStop(0,'rgba(255,255,200,'+(1-k)+')');gr.addColorStop(.5,'rgba(251,146,60,'+(.9-k*.9)+')');gr.addColorStop(1,'rgba(220,38,38,0)');ctx.fillStyle=gr;ctx.beginPath();ctx.arc(b.x,b.y,r,0,7);ctx.fill();}
+   g.parts=g.parts.filter(p=>p.life>0);g.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.18;p.life--;ctx.globalAlpha=Math.min(1,p.life/20);ctx.fillStyle=p.c;ctx.fillRect(p.x,p.y,3,3);ctx.globalAlpha=1;});
+   g.floats=g.floats.filter(f=>f.life>0);g.floats.forEach(f=>{f.y-=.5;f.life--;ctx.globalAlpha=Math.min(1,f.life/20);ctx.fillStyle='#EF4444';ctx.font='800 16px sans-serif';ctx.textAlign='center';ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.strokeText(f.t,f.x,f.y);ctx.fillText(f.t,f.x,f.y);ctx.globalAlpha=1;});
+   if((g.phase==='ai'||g.phase==='aiaim')&&!g.over){const t=g.tank[1];ctx.fillStyle='rgba(0,0,0,.6)';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.fillText(Math.round(t.ang)+'° · '+Math.round(t.pow)+'%',t.x,t.y-48);}
+   if(g.flash&&g.flash.life>0){const f=g.flash;ctx.globalAlpha=Math.min(1,f.life/20);ctx.fillStyle=f.col;ctx.font='800 24px sans-serif';ctx.textAlign='center';ctx.strokeStyle='rgba(0,0,0,.5)';ctx.lineWidth=4;ctx.strokeText(f.t,TKW/2,120);ctx.fillText(f.t,TKW/2,120);ctx.globalAlpha=1;f.life--;}};
+  let raf,last=performance.now(),acc=0;
+  const loop=now=>{acc+=Math.min(now-last,100);last=now;
+   while(acc>=16.67){acc-=16.67;
+    g.tank.forEach(t=>{const ty=tkH(g.h,t.x);t.y+=(ty-t.y)*.25;});
+    if(g.phase==='aiaim'){const t=g.tank[1],T=g.aiTarget;g.aiT++;t.ang+=(T.a-t.ang)*.1;t.pow+=(T.p-t.pow)*.1;if(g.aiT>50){t.ang=T.a;t.pow=T.p;fire(1);}}
+    if(g.phase==='fly'&&g.proj){const p=g.proj;let done=false;
+     for(let s=0;s<3&&!done;s++){p.x+=p.vx/3;p.y+=p.vy/3;p.vy+=TKG/3;
+      if(p.x<-10||p.x>TKW+10||p.y>TKH+30){const w=p.who;g.proj=null;g.mark[w]=null;g.phase='boom';g.boomT=26;g.boom=null;sync((w?'Chidi O.':'You')+' — shot flew off the map.');done=true;break;}
+      let hitT=false;for(const t of g.tank){if(!t.dead&&Math.hypot(p.x-t.x,p.y-(t.y-7))<12)hitT=true;}
+      const sy=p.y>=0&&p.x>=0&&p.x<TKW?g.h[Math.floor(p.x)]:9999;
+      if(hitT||p.y>=sy){explode(p.x,hitT?p.y:sy,hitT);done=true;}}
+     if(g.proj){g.trail.push([g.proj.x,g.proj.y]);if(g.trail.length>400)g.trail.shift();}}
+    if(g.phase==='boom'){g.boomT++;if(g.boom)g.boom.f++;if(g.boomT>=46)settleTurn();}}
+   if(g.phase==='ai'&&!g.ai&&!g.over){g.ai=true;setTimeout(aiPlay,900);}
+   draw(now);raf=requestAnimationFrame(loop);};
+  raf=requestAnimationFrame(loop);
+  return()=>cancelAnimationFrame(raf);
+ },[]);
+ const api=()=>G.current.api;const can=ui.turn===0&&!ui.over&&G.current.phase==='aim';
+ const hp=(p,name,col)=>d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(ui.turn===p&&!ui.over?'ring-2 ring-[#FFC83D]':'opacity-80'),
+  d('flex items-center justify-between',d('flex items-center gap-1.5 text-sm font-extrabold',h('span',{className:'inline-block h-3 w-3 rounded-full border',style:{background:col,borderColor:'rgba(255,255,255,.6)'}}),name),d('text-xs font-extrabold tabular-nums',ui.hp[p]+' HP')),
+  d('mt-1.5 h-2.5 overflow-hidden rounded-full bg-white/15',h('div',{className:'h-full rounded-full transition-all',style:{width:ui.hp[p]+'%',background:ui.hp[p]>60?'#4ADE80':ui.hp[p]>30?'#FBBF24':'#EF4444'}})));
+ const ctl=(label,val,unit,min,max,set)=>d('rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center justify-between text-xs font-bold',d('text-white/70',label),d('text-base font-extrabold tabular-nums text-[#FFC83D]',val+unit)),
+  d('mt-1 flex items-center gap-2',h('button',{onClick:()=>set(val-1),disabled:!can,'aria-label':label+' minus',className:'h-8 w-8 shrink-0 rounded-full bg-white/10 text-lg font-extrabold disabled:opacity-40 active:scale-90'},'−'),
+   h('input',{type:'range',min,max,value:val,disabled:!can,'aria-label':label,onChange:e=>set(+e.target.value),className:'h-2 w-full accent-[#FFC83D] disabled:opacity-40'}),
+   h('button',{onClick:()=>set(val+1),disabled:!can,'aria-label':label+' plus',className:'h-8 w-8 shrink-0 rounded-full bg-white/10 text-lg font-extrabold disabled:opacity-40 active:scale-90'},'+')));
+ return d('p-3 space-y-2',
+  d('flex items-center justify-between gap-2 rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center gap-1.5 text-sm font-extrabold','🔒 Escrow '+money(pool)),d('text-right text-[10px] leading-tight text-white/70',d('','Stake '+money(stake)+' each'),d('text-xs font-extrabold text-[#FFC83D]','Winner gets '+money(payout)))),
+  d('flex items-center gap-2',hp(0,'You','#FFC83D'),hp(1,'Chidi O.','#60A5FA')),
+  d('relative',h('canvas',{ref:cv,width:TKW*2,height:TKH*2,style:{width:'100%',height:'auto',display:'block',borderRadius:20},'aria-label':'Battlefield'}),
+   ui.over&&d('pop absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-black/70',d('px-6 text-center text-xl font-extrabold text-white',ui.msg))),
+  d('grid grid-cols-2 gap-2',ctl('BARREL ANGLE',ui.ang,'°',0,180,v=>api().setAngle&&api().setAngle(v)),ctl('FIRE POWER',ui.pow,'%',0,100,v=>api().setPower&&api().setPower(v))),
+  h('button',{onClick:()=>api().fire&&api().fire(),disabled:!can,className:'w-full rounded-2xl bg-[#EF4444] py-3.5 text-lg font-extrabold tracking-wide text-white shadow-lg transition active:scale-[.97] disabled:opacity-40'},can?'🔥 FIRE':ui.over?'Match over':ui.turn===1?'Chidi O. is aiming…':'Wait…'),
+  d('text-center text-sm font-semibold text-white',ui.msg));
+}
+
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),Lg=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[scr,setScr]=useState('start'),[res,setRes]=useState(null),[before,setBefore]=useState(0),[rules,setRules]=useState(false);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake;
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBefore(bal);setBal(b=>b-stake);setLed(l=>[Lg(m,'AI stake locked in escrow',stake,'opp'),Lg(m,'Your stake locked in escrow',-stake,'lock'),...l]);setRes(null);setScr('game');};
+ const done=w=>{const m=mid;
+  if(w===0){setBal(b=>b+stake);setLed(l=>[Lg(m,'AI stake refunded',stake,'opp'),Lg(m,'Your stake refunded (no fee)',stake,'release'),Lg(m,'Match drawn · both tanks destroyed',0,'info'),...l]);setRes(0);return;}
+  if(w===1){setBal(b=>b+payout);setLed(l=>[Lg(m,'Payout credited to your wallet',payout,'release'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match won · escrow pool '+money(pool),0,'info'),...l]);}
+  else setLed(l=>[Lg(m,'Payout released to AI',payout,'opp'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match lost · escrow pool '+money(pool),0,'info'),...l]);
+  setRes(w);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-2 px-2 pb-4 pt-3 relative',...k);
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-5 px-3 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','TANKS'),d('text-sm text-white/80','Dial in angle and power, fire over the mountain, and blow the other tank to pieces. Last tank standing takes the pot.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play')));
+ const mine=led.filter(x=>x.mid===mid).reverse();
+ return shell(
+  d('rounded-[28px] bg-[#F2F6F3] text-[#12231B]',h(TanksGame,{key:mid,stake,pool,payout,onEnd:done})),
+  res!==null&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('mt-1 text-5xl',res===1?'🏆':res===0?'🤝':'😬'),d('text-2xl font-extrabold',res===1?'You destroyed their tank!':res===0?'Mutual destruction':'Chidi O. wins'),d('text-sm text-[#5C7467]',res===1?'Winner takes the escrow pool':res===0?'Both tanks were destroyed — stakes refunded':'Your tank was destroyed')),
+   res===0?d('mt-3 rounded-2xl bg-[#EAF3ED] p-4 text-sm font-semibold','Both stakes refunded — '+money(stake)+' back to each player. No platform fee.'):d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[res===1?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'||x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>{setScr('start');setRes(null);},className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

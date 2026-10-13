@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ludo Duel – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#0F1F18;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#08130E}}
+:root[data-theme="dark"]{--bg:#08130E}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
+body{margin:0;height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+@keyframes roll{0%{transform:rotate(0) scale(1)}50%{transform:rotate(180deg) scale(1.18)}100%{transform:rotate(360deg) scale(1)}}
+.rolling{animation:roll .38s linear infinite}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+@media (prefers-reduced-motion:reduce){.rolling,.pop,.up{animation:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root" style="height:100%"></div>
+<script>
+const {useState,useEffect,useRef}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const TRACK=[];const seg=(x,y,dx,dy,n)=>{for(let k=0;k<n;k++)TRACK.push([x+dx*k,y+dy*k]);};
+seg(1,6,1,0,5);seg(6,5,0,-1,6);seg(7,0,1,0,2);seg(8,1,0,1,5);seg(9,6,1,0,6);seg(14,7,0,1,2);seg(13,8,-1,0,5);seg(8,9,0,1,6);seg(7,14,-1,0,2);seg(6,13,0,-1,5);seg(5,8,-1,0,6);seg(0,7,0,-1,2);
+const SAFE=[0,8,13,21,26,34,39,47];
+const CO=[{n:'Red',col:'#DC2626',off:0,yard:[0,0],pos:'Top-left'},{n:'Green',col:'#16A34A',off:13,yard:[9,0],pos:'Top-right'},{n:'Yellow',col:'#EAB308',off:26,yard:[9,9],pos:'Bottom-right'},{n:'Blue',col:'#2563EB',off:39,yard:[0,9],pos:'Bottom-left'}];
+const PIPS={1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]};
+const SLOTS=N=>N===2?[[2,3],[4,3]]:[[2,2],[4,2],[2,4],[4,4]];
+const abs=(c,p)=>(CO[c].off+p)%52;
+const fresh=(mine,N)=>({owner:[0,1,2,3].map(c=>mine.includes(c)?0:1),N,phase:'roll',turn:0,tok:[0,1,2,3].map(()=>Array(N).fill(-1)),dice:null,used:[false,false],sel:0,extra:false,face:[1,1],msg:'Roll both dice — a 6 on either die launches a token!',winner:null});
+const movesOf=(s,w,v)=>{const r=[];for(let c=0;c<4;c++)if(s.owner[c]===w)s.tok[c].forEach((p,i)=>{if(p<0?v===6:(p<56&&p+v<=56))r.push([c,i]);});return r;};
+const cellPos=(c,p,i,N)=>{
+ if(p<0){const[ox,oy]=CO[c].yard,sl=SLOTS(N)[i];return[ox+sl[0],oy+sl[1]];}
+ if(p<=50){const[x,y]=TRACK[abs(c,p)];return[x+.5,y+.5];}
+ if(p<=55){const k=p-50;return[[k,7],[7,k],[14-k,7],[7,14-k]][c].map(z=>z+.5);}
+ const o=.4*i;return[[6.6,6.9+o],[6.9+o,6.6],[8.4,6.9+o],[6.9+o,8.4]][c];};
+const Dice=({v,rolling,dim,used,sel,onClick})=>h('button',{onClick,disabled:!onClick,'aria-label':'Die',className:'relative grid h-12 w-12 shrink-0 place-items-center rounded-xl transition '+(rolling?'rolling':'')+(dim?' opacity-40':'')+(used?' opacity-30 scale-90':'')+(sel?' ring-4 ring-[#FFC83D] -translate-y-1':''),style:{background:'linear-gradient(145deg,#fff,#E5E7EB)',boxShadow:'inset -3px -3px 5px rgba(0,0,0,.18),inset 2px 2px 3px #fff,0 5px 9px rgba(0,0,0,.4)'}},
+ d('grid h-9 w-9 grid-cols-3 grid-rows-3 place-items-center',...[0,1,2,3,4,5,6,7,8].map(k=>h('span',{key:k,className:'h-2 w-2 rounded-full '+((PIPS[v]||[]).includes(k)?'bg-[#12231B]':'')}))));
+
+function Board({st,onTap}){
+ const N=st.N,dv=st.dice?st.dice[st.sel]:0,mv=st.phase==='move'&&st.turn===0?movesOf(st,0,dv):[];
+ const items=[],seen={};
+ for(let c=0;c<4;c++)for(let i=0;i<N;i++){const p=st.tok[c][i];let[x,y]=cellPos(c,p,i,N);const key=x+','+y,n=seen[key]=(seen[key]||0)+1;if(p>=0&&n>1){x+=((n-1)%3-1)*.2;y+=(Math.floor((n-1)/3)-.3)*.2;}items.push({c,i,p,x,y});}
+ const cells=[];
+ TRACK.forEach(([cx,cy],k)=>{cells.push(h('rect',{key:'t'+k,x:cx,y:cy,width:1,height:1,fill:k%13===0?CO[k/13].col:'#fff',stroke:'#B8C4BD',strokeWidth:.05}));
+  if(SAFE.includes(k))cells.push(h('text',{key:'s'+k,x:cx+.5,y:cy+.74,fontSize:.7,textAnchor:'middle',fill:k%13===0?'#fff':'#D97706'},'★'));});
+ const cols=[];for(let c=0;c<4;c++)for(let k=1;k<=5;k++){const[x,y]=cellPos(c,50+k,0,N);cols.push(h('rect',{key:'h'+c+k,x:x-.5,y:y-.5,width:1,height:1,fill:CO[c].col,stroke:'#fff',strokeWidth:.05,opacity:.92}));}
+ const yards=CO.map((o,c)=>{const[ox,oy]=o.yard;return h('g',{key:'y'+c},h('rect',{x:ox,y:oy,width:6,height:6,fill:o.col}),h('rect',{x:ox+1,y:oy+1,width:4,height:4,rx:.6,fill:'#fff',opacity:.95}),
+  h('text',{x:ox+3,y:oy+.74,fontSize:.55,fontWeight:800,textAnchor:'middle',fill:'#fff'},st.owner[c]===0?'YOU':'AI'),
+  ...SLOTS(N).map(([a,b],k)=>h('circle',{key:k,cx:ox+a,cy:oy+b,r:.5,fill:o.col,opacity:.25})));});
+ return h('svg',{viewBox:'0 0 15 15',className:'w-full rounded-2xl shadow-2xl',style:{background:'#FFFBF0',display:'block'}},
+  ...yards,...cells,...cols,
+  h('polygon',{points:'6,6 6,9 7.5,7.5',fill:CO[0].col}),h('polygon',{points:'6,6 9,6 7.5,7.5',fill:CO[1].col}),h('polygon',{points:'9,6 9,9 7.5,7.5',fill:CO[2].col}),h('polygon',{points:'6,9 9,9 7.5,7.5',fill:CO[3].col}),
+  ...mv.map(([c,i])=>{const p=st.tok[c][i],[x,y]=cellPos(c,p<0?0:p+dv,i,N);return h('circle',{key:'m'+c+i,cx:x,cy:y,r:.42,fill:'rgba(255,200,61,.25)',stroke:'#F59E0B',strokeWidth:.1,strokeDasharray:'.25 .2'});}),
+  ...items.map(t=>{const can=mv.some(([c,i])=>c===t.c&&i===t.i);
+   return h('g',{key:t.c+'-'+t.i,onClick:can?()=>onTap(t.c,t.i):undefined,style:{transform:'translate('+t.x+'px,'+t.y+'px)',transition:'transform .15s linear',cursor:can?'pointer':'default'}},
+    can&&h('circle',{r:.62,fill:'rgba(255,200,61,.4)'},h('animate',{attributeName:'r',values:'.5;.75;.5',dur:'.9s',repeatCount:'indefinite'})),
+    h('circle',{r:.38,cy:.06,fill:'rgba(0,0,0,.25)'}),h('circle',{r:.38,fill:CO[t.c].col,stroke:st.owner[t.c]===0?'#fff':'#0B0F0D',strokeWidth:.11}),h('circle',{r:.14,cx:-.1,cy:-.12,fill:'#fff',opacity:.55}));}));
+}
+
+function App(){
+ const [scr,setScr]=useState('start'),[stake,setStake]=useState(1000),[rules,setRules]=useState(false),[mine,setMine]=useState([0,2]),[N,setN]=useState(4);
+ const [st,setSt]=useState(()=>fresh([0,2],4)),S=useRef(st);
+ const upd=f=>{S.current=f(S.current);setSt(S.current);};
+ const pool=stake*2,rake=pool*.05,payout=pool-rake,nm=w=>w?'AI':'You',R=()=>1+Math.floor(Math.random()*6);
+ const avail=s=>[0,1].filter(k=>s.dice&&!s.used[k]&&movesOf(s,s.turn,s.dice[k]).length>0);
+ const endTurn=()=>upd(s=>s.extra?{...s,phase:'roll',dice:null,used:[false,false],extra:false,msg:nm(s.turn)+' roll again!'}:{...s,turn:1-s.turn,phase:'roll',dice:null,used:[false,false],extra:false,msg:''});
+ const settle=fresh=>{const s=S.current,A=avail(s);
+  if(A.length){upd(s=>({...s,phase:'move',sel:A.includes(s.sel)?s.sel:A[0],msg:fresh?(s.turn?'AI rolled '+s.dice[0]+' & '+s.dice[1]+'.':'You rolled '+s.dice[0]+' & '+s.dice[1]+(s.extra?' — bonus roll coming!':'.')+' Pick a die, then tap a glowing token.'):(s.msg||'Now use the other die.')}));return;}
+  const left=s.used.some(u=>!u);
+  upd(s=>({...s,phase:'anim',msg:left?(s.used.every(u=>!u)?nm(s.turn)+' rolled '+s.dice[0]+' & '+s.dice[1]+' — no move.':nm(s.turn)+' has no move for the other die.'):s.msg}));
+  setTimeout(endTurn,left?1200:700);};
+ const rollDice=()=>{if(S.current.phase!=='roll')return;upd(s=>({...s,phase:'rolling',msg:''}));let n=0;
+  const iv=setInterval(()=>{upd(s=>({...s,face:[R(),R()]}));if(++n>=8){clearInterval(iv);const v=[R(),R()];upd(s=>({...s,face:v,dice:v,used:[false,false],extra:v[0]===v[1]||v.includes(6),sel:0}));settle(true);}},80);};
+ const land=(c,tgt)=>{const s=S.current,w=s.owner[c],tok=s.tok.map(a=>[...a]);let cap=0;
+  if(tgt<=50&&!SAFE.includes(abs(c,tgt))){for(let o=0;o<4;o++)if(s.owner[o]!==w)tok[o]=tok[o].map(q=>{if(q>=0&&q<=50&&abs(o,q)===abs(c,tgt)){cap++;return -1;}return q;});}
+  if([0,1,2,3].every(k=>s.owner[k]!==w||tok[k].every(q=>q===56))){upd(s=>({...s,tok,phase:'over',winner:w,msg:''}));return;}
+  upd(s=>({...s,tok,extra:s.extra||cap>0||tgt===56,msg:cap?nm(w)+' captured '+cap+' token'+(cap>1?'s':'')+'!':tgt===56?nm(w)+' got a token home!':''}));
+  settle(false);};
+ const doMove=(c,i)=>{const s0=S.current,k=s0.sel,v=s0.dice[k],p0=s0.tok[c][i],tgt=p0<0?0:p0+v;
+  upd(s=>({...s,phase:'anim',used:s.used.map((u,j)=>j===k?true:u)}));
+  const path=p0<0?[0]:Array.from({length:tgt-p0},(_,q)=>p0+1+q);let q=0;
+  const iv=setInterval(()=>{upd(s=>{const tok=s.tok.map(a=>[...a]);tok[c][i]=path[q];return{...s,tok};});if(++q>=path.length){clearInterval(iv);setTimeout(()=>land(c,tgt),200);}},160);};
+ const pickAI=s=>{let best=null,bs=-1;avail(s).forEach(k=>movesOf(s,1,s.dice[k]).forEach(([c,i])=>{const v=s.dice[k],p=s.tok[c][i],t=p<0?0:p+v;let sc=t;if(p<0)sc+=60;
+   if(t===56)sc+=90;else if(t>50)sc+=40;else{const a=abs(c,t);if(SAFE.includes(a))sc+=25;else if([0,1,2,3].some(o=>s.owner[o]===0&&s.tok[o].some(q=>q>=0&&q<=50&&abs(o,q)===a)))sc+=100;}
+   sc+=Math.random()*5;if(sc>bs){bs=sc;best=[k,c,i];}}));return best;};
+ useEffect(()=>{if(scr!=='game'||st.phase==='over'||st.turn!==1)return;let t;
+  if(st.phase==='roll')t=setTimeout(rollDice,900);
+  else if(st.phase==='move')t=setTimeout(()=>{const m=pickAI(S.current);if(!m)return;upd(s=>({...s,sel:m[0]}));doMove(m[1],m[2]);},900);
+  return()=>clearTimeout(t);},[scr,st.turn,st.phase]);
+ const begin=()=>{S.current=fresh(mine,N);setSt(S.current);setScr('game');};
+ const pickSide=c=>setMine(m=>m.includes(c)?m.filter(x=>x!==c):[...m,c].slice(-2));
+ const shell=(...k)=>d('relative mx-auto flex h-full max-w-[470px] flex-col overflow-hidden',...k);
+
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-5 py-4 text-center',
+  d('text-5xl font-extrabold tracking-tight text-[#FFC83D]','LUDO'),d('text-sm text-white/80','1v1 duel with two dice per roll. You command two colours, the AI commands the other two.'),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','1 · CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q))))),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','2 · PICK YOUR 2 SIDES ('+mine.length+'/2)'),
+   d('grid grid-cols-2 gap-2',...CO.map((o,c)=>h('button',{key:c,onClick:()=>pickSide(c),'aria-pressed':mine.includes(c),className:'flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left transition active:scale-95 '+(mine.includes(c)?'bg-white/20 border-white':'border-white/20 opacity-80')},
+     h('span',{className:'h-6 w-6 rounded-full border-2 border-white',style:{background:o.col}}),d('',d('text-sm font-extrabold',o.n),d('text-[10px] text-white/60',mine.includes(c)?'YOU · '+o.pos:mine.length===2?'AI · '+o.pos:o.pos))))),
+   d('mt-2 text-xs text-white/70',mine.length===2?'AI plays '+[0,1,2,3].filter(c=>!mine.includes(c)).map(c=>CO[c].n).join(' + '):'Tap two colours to claim them.')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','3 · TOKENS PER SIDE'),
+   d('grid grid-cols-2 gap-2',...[[4,'4 · Classic'],[2,'2 · Quick']].map(([n,t])=>h('button',{key:n,onClick:()=>setN(n),className:'rounded-xl border-2 py-2.5 text-sm font-extrabold '+(N===n?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},t))),
+   d('mt-2 text-xs text-white/70','Win by bringing all '+N*2+' of your tokens home · pool '+money(pool)+' · payout '+money(payout))),
+  h('button',{onClick:begin,disabled:mine.length!==2,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},'Lock '+money(stake)+' & Play'),
+  h('button',{onClick:()=>setRules(true),className:'text-sm text-white/70 underline'},'How to play'),rules&&Rules(()=>setRules(false))));
+
+ const over=st.phase==='over',myTurn=st.turn===0&&st.phase==='roll'&&!over;
+ const bar=w=>{const cs=[0,1,2,3].filter(c=>st.owner[c]===w),act=st.turn===w&&!over,tot=cs.reduce((a,c)=>a+st.tok[c].filter(q=>q===56).length,0);
+  const vals=act?(st.phase==='rolling'||!st.dice?st.face:st.dice):[null,null];
+  return d('flex items-center gap-3 rounded-2xl px-3 py-2 transition '+(act?'ring-2 ring-[#FFC83D] bg-white/15':'bg-white/5'),
+   d('flex shrink-0 -space-x-2',...cs.map(c=>h('span',{key:c,className:'h-8 w-8 rounded-full border-2 '+(w?'border-[#0B0F0D]':'border-white'),style:{background:CO[c].col}}))),
+   d('min-w-0 flex-1',d('truncate text-sm font-extrabold',(w?'AI':'You')+' · '+cs.map(c=>CO[c].n).join(' + ')),
+    d('mt-1 flex flex-wrap items-center gap-1',...cs.flatMap(c=>st.tok[c].map((q,i)=>h('span',{key:c+'-'+i,className:'h-2.5 w-2.5 rounded-full',style:{background:q===56?CO[c].col:'rgba(255,255,255,.2)'}}))),h('span',{className:'ml-1 text-[11px] text-white/60'},tot+'/'+cs.length*st.N))),
+   d('flex gap-1.5',...[0,1].map(k=>{const pick=w===0&&st.phase==='move'&&st.dice&&!st.used[k]&&movesOf(st,0,st.dice[k]).length>0;
+    return h(Dice,{key:k,v:vals[k],rolling:act&&st.phase==='rolling',dim:!act,used:act&&st.dice&&st.used[k],sel:act&&st.phase==='move'&&st.sel===k,onClick:w===0?(myTurn?rollDice:pick?()=>upd(s=>({...s,sel:k})):undefined):undefined});})));};
+ return shell(
+  d('flex items-center justify-between px-4 pt-3 pb-2',d('flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-extrabold','🔒 Pot '+money(pool),h('span',{className:'font-semibold text-white/60'},'· '+money(stake)+' each')),
+   h('button',{onClick:()=>setRules(true),'aria-label':'Rules',className:'h-9 w-9 rounded-full bg-white/10 font-extrabold'},'?')),
+  d('px-3',bar(1)),d('px-3 py-2',h(Board,{st,onTap:(c,i)=>{if(S.current.phase==='move'&&S.current.turn===0)doMove(c,i);}})),d('px-3',bar(0)),
+  d('flex min-h-[3.6rem] flex-col items-center justify-center gap-1.5 px-5 py-1 text-center text-sm font-semibold text-white/90',st.msg||(st.turn===1&&!over?'AI is playing…':''),
+   myTurn&&h('button',{onClick:rollDice,className:'rounded-xl bg-[#FFC83D] px-6 py-2.5 text-sm font-extrabold text-[#12231B] active:scale-95'},'🎲 Roll both dice')),
+  over&&d('absolute inset-0 z-30 grid place-items-center bg-black/70 p-5',d('pop w-full rounded-[28px] bg-[#FFFBF0] p-6 text-center text-[#12231B]',
+   d('text-5xl',st.winner===0?'🏆':'😬'),d('mt-2 text-2xl font-extrabold',st.winner===0?'Victory!':'AI wins this one'),
+   d('mt-4 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[st.winner===0?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-2 text-sm font-bold '+(st.winner===0?'text-[#0E7C4B]':'text-[#C2410C]'),st.winner===0?'Net win '+money(payout-stake)+' · paid to your wallet':'You lost your '+money(stake)+' stake'),
+   h('button',{onClick:begin,className:'mt-4 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95'},'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>setScr('start'),className:'mt-2 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change sides / stake'))),
+  rules&&Rules(()=>setRules(false)));
+}
+function Rules(close){return d('absolute inset-0 z-40 flex items-end bg-black/60',d('up max-h-[85%] w-full overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5 text-left text-[#12231B]',
+ d('mb-2 flex items-center justify-between',d('text-lg font-extrabold','How to play'),h('button',{onClick:close,className:'h-8 w-8 rounded-full bg-[#EAF3ED] font-bold','aria-label':'Close'},'✕')),
+ d('space-y-2 text-sm',...[['Sides','You pick 2 of the 4 colours; the AI takes the other 2. Each turn you roll once and may move a token of either of your colours.'],['Goal','Bring every token of both your colours into its centre home triangle.'],['Two dice','Each roll throws two dice. Use each die separately, on any token of either of your colours. Tap a die to choose which one to use, then tap a glowing token.'],['Launch','A 6 on a die moves a token out of the yard onto its start square.'],['Extra roll','Doubles, a 6 on either die, a capture, or getting a token home earns another roll. A die with no legal move is forfeited.'],['Capture','Land exactly on a token of an opponent colour to send it back to their yard — except on starred safe squares.'],['Home','You need the exact number to enter the home triangle.'],['Payout','Winner gets 95% of the pool; 5% is the platform fee.']].map(r=>d('',h('b',null,r[0]+': '),r[1])))));}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

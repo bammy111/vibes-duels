@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cup Pong – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useRef,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const CPW=340,CPH=560,CPBX=170,CPBY=478,CPGRAV=.28,CPCUPH=22,CPR=18,CPRIN=14,CPROUT=21,CPVZ=6.5;
+const cpScale=y=>.62+.38*Math.max(0,Math.min(1,(y-60)/460));
+const cpRack=()=>{const c=[];[[110,[125,170,215]],[146,[147.5,192.5]],[182,[170]]].forEach(([y,xs])=>xs.forEach(x=>c.push({x,y,alive:true,dying:0})));return c;};
+const cpOnTable=(x,y)=>{const t=Math.max(0,Math.min(1,(y-60)/500));return y>=60&&y<=CPH&&x>=70-80*t&&x<=270+80*t;};
+const cpGauss=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random());
+const cpTrajRimTime=(CPVZ+Math.sqrt(CPVZ*CPVZ-2*CPGRAV*CPCUPH))/CPGRAV;
+function CupPongGame({stake,pool,payout,onEnd}){
+ const cv=useRef(),endRef=useRef();endRef.current=onEnd;
+ const G=useRef(null);
+ if(!G.current)G.current={cups:[cpRack(),cpRack()],turn:0,view:1,phase:'aim',ball:null,drag:null,aim:null,fx:[],over:false,ai:false};
+ const [ui,setUi]=useState({turn:0,msg:'Your throw — drag back anywhere to aim, release to throw.',over:false,cups:[6,6],tick:0});
+ useEffect(()=>{
+  const g=G.current,c=cv.current,ctx=c.getContext('2d');ctx.scale(2,2);
+  const alive=o=>g.cups[o].filter(x=>x.alive).length;
+  const sync=m=>setUi(u=>({turn:g.turn,msg:m||u.msg,over:g.over,cups:[alive(0),alive(1)],tick:u.tick+1}));
+  const traj=(vx,vy,vz)=>{const pts=[];let x=CPBX,y=CPBY,z=0,pz=0,vv=vz;for(let i=0;i<220;i++){pz=z;x+=vx;y+=vy;z+=vv;vv-=CPGRAV;pts.push([x,y,z]);if(pz>CPCUPH&&z<=CPCUPH&&vv<0)break;if(z<0)break;}return pts;};
+  const fire=(vx,vy,vz)=>{g.ball={x:CPBX,y:CPBY,z:0,vx,vy,vz,live:true,pz:0,bounces:0,sunk:false,age:0,rim:false};g.phase='flight';g.aim=null;g.drag=null;};
+  const end=()=>{if(g.phase!=='flight')return;g.phase='resolve';const sunk=g.ball.sunk,me=g.turn,tgt=1-me,who=me?'Chidi O.':'You';
+   sync(sunk?(me?'💦 Chidi O. sank one of your cups!':'💦 SPLASH! You sank a cup!'):(g.ball.rim?who+(me?' hit the rim — no luck.':' hit the rim — no luck!'):who+(me?' missed.':' missed the cups.')));
+   setTimeout(()=>{if(g.over)return;
+    if(alive(tgt)===0){g.over=true;sync(me?'Chidi O. cleared all 6 of your cups!':'You cleared all 6 of Chidi O.\'s cups!');setTimeout(()=>endRef.current(me?2:1),2400);return;}
+    g.turn=1-me;g.view=1-g.turn;g.phase=g.turn===0?'aim':'ai';g.ai=false;
+    sync(g.turn===0?'Your throw — drag back anywhere to aim, release to throw.':"Chidi O.'s throw — your cups are the target");},sunk?1100:900);};
+  const sink=cu=>{cu.alive=false;cu.dying=1;g.ball.live=false;g.ball.sunk=true;const s=cpScale(cu.y);for(let i=0;i<14;i++)g.fx.push({x:cu.x,y:cu.y-CPCUPH*s,vx:(Math.random()-.5)*3,vy:-Math.random()*3-1,life:30,col:g.view===1?'#FCA5A5':'#93C5FD'});end();};
+  const stepBall=()=>{const b=g.ball;if(!b||!b.live)return;b.age++;b.pz=b.z;b.x+=b.vx;b.y+=b.vy;b.z+=b.vz;b.vz-=CPGRAV;
+   for(const cu of g.cups[g.view]){if(!cu.alive)continue;const dx=b.x-cu.x,dy=b.y-cu.y,d=Math.hypot(dx,dy),nx=dx/(d||1),ny=dy/(d||1);
+    if(b.pz>CPCUPH&&b.z<=CPCUPH&&b.vz<0){
+     if(d<CPRIN){sink(cu);return;}
+     if(d<CPROUT){b.vx=nx*2+b.vx*.3;b.vy=ny*2+b.vy*.3;b.vz=2.6;b.z=CPCUPH+1;b.rim=true;}}
+    else if(b.z<CPCUPH&&d<CPROUT){b.x=cu.x+nx*CPROUT;b.y=cu.y+ny*CPROUT;const vn=b.vx*nx+b.vy*ny;if(vn<0){b.vx-=1.7*vn*nx;b.vy-=1.7*vn*ny;}b.vx*=.8;b.vy*=.8;b.rim=true;}}
+   if(b.z<=0&&b.vz<0&&cpOnTable(b.x,b.y)){b.z=0;b.vz=Math.abs(b.vz)*.55;b.vx*=.85;b.vy*=.85;b.bounces++;b.rim=true;if(b.vz<1.2)b.vz=0;}
+   if(b.z===0&&b.vz===0){b.vx*=.97;b.vy*=.97;}
+   if(b.z<-70||b.y<-30||b.y>CPH+40||b.x<-40||b.x>CPW+40||b.age>520||(b.z===0&&Math.hypot(b.vx,b.vy)<.35)){b.live=false;end();}};
+  /* computer opponent: Chidi O. */
+  const aiThrow=()=>{if(g.over||g.turn!==1||g.phase!=='ai')return;
+   const tg=g.cups[0].filter(x=>x.alive),cu=tg[Math.floor(Math.random()*tg.length)];
+   g.aim={vx:(cu.x-CPBX+cpGauss()*17)/cpTrajRimTime,vy:(cu.y-CPBY+cpGauss()*21)/cpTrajRimTime,vz:CPVZ};
+   setTimeout(()=>{if(g.over||g.phase!=='ai')return;fire(g.aim.vx,g.aim.vy,g.aim.vz);},950);};
+  /* drawing */
+  const drawCup=(cu,col)=>{const s=cpScale(cu.y),k=cu.dying?Math.max(0,1-cu.dying/22):1;if(k<=0)return;
+   ctx.save();ctx.globalAlpha=k;ctx.translate(cu.x,cu.y);ctx.scale(s*k,s*k);const r=CPR,rb=r*.76,hh=CPCUPH;
+   ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(2,2,rb+2,rb*.34,0,0,7);ctx.fill();
+   ctx.fillStyle=col[0];ctx.beginPath();ctx.moveTo(-r,-hh);ctx.lineTo(r,-hh);ctx.lineTo(rb,0);ctx.lineTo(-rb,0);ctx.closePath();ctx.fill();
+   ctx.beginPath();ctx.ellipse(0,0,rb,rb*.32,0,0,7);ctx.fill();
+   ctx.fillStyle='rgba(255,255,255,.88)';const w1=r-(r-rb)*.45,w2=r-(r-rb)*.7;ctx.beginPath();ctx.moveTo(-w1,-hh*.55);ctx.lineTo(w1,-hh*.55);ctx.lineTo(w2,-hh*.3);ctx.lineTo(-w2,-hh*.3);ctx.closePath();ctx.fill();
+   ctx.fillStyle=col[1];ctx.beginPath();ctx.ellipse(0,-hh,r,r*.34,0,0,7);ctx.fill();
+   ctx.fillStyle='rgba(0,0,0,.5)';ctx.beginPath();ctx.ellipse(0,-hh,r*.82,r*.27,0,0,7);ctx.fill();
+   ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1.2;ctx.beginPath();ctx.ellipse(0,-hh,r,r*.34,0,0,7);ctx.stroke();ctx.restore();};
+  const drawBall=(x,y,z,s)=>{const sy=y-z*s;ctx.fillStyle='rgba(0,0,0,'+(.3*Math.max(0,1-z/130))+')';ctx.beginPath();ctx.ellipse(x,y,5.5*s,2.2*s,0,0,7);ctx.fill();
+   ctx.beginPath();ctx.arc(x,sy,5.8*s,0,7);ctx.fillStyle='#FFF4E0';ctx.fill();ctx.strokeStyle='#F59E0B';ctx.lineWidth=1.3;ctx.stroke();
+   ctx.fillStyle='rgba(255,255,255,.9)';ctx.beginPath();ctx.arc(x-1.6*s,sy-1.8*s,1.6*s,0,7);ctx.fill();};
+  const guide=(vx,vy,vz,col)=>{const pts=traj(vx,vy,vz);ctx.fillStyle=col;
+   pts.forEach(([x,y,z],i)=>{if(i%2===0&&i>2){const s=cpScale(y);ctx.beginPath();ctx.arc(x,y-z*s,2.1,0,7);ctx.fill();}});
+   const[x,y,z]=pts[pts.length-1],s=cpScale(y);ctx.strokeStyle=col;ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(x,y-z*s,CPR*s*.8,CPR*s*.3,0,0,7);ctx.stroke();};
+  const draw=()=>{
+   ctx.fillStyle='#0A1812';ctx.fillRect(0,0,CPW,CPH);
+   ctx.beginPath();ctx.moveTo(70,60);ctx.lineTo(270,60);ctx.lineTo(350,CPH);ctx.lineTo(-10,CPH);ctx.closePath();
+   const gr=ctx.createLinearGradient(0,60,0,CPH);gr.addColorStop(0,'#0B5C80');gr.addColorStop(1,'#12739E');ctx.fillStyle=gr;ctx.fill();ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2;ctx.stroke();
+   ctx.strokeStyle='rgba(255,255,255,.14)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(170,60);ctx.lineTo(170,CPH);ctx.stroke();
+   ctx.setLineDash([6,6]);ctx.strokeStyle='rgba(255,255,255,.3)';ctx.beginPath();ctx.moveTo(10,CPBY+16);ctx.lineTo(330,CPBY+16);ctx.stroke();ctx.setLineDash([]);
+   ctx.fillStyle='rgba(255,255,255,.4)';ctx.font='bold 9px sans-serif';ctx.textAlign='left';ctx.fillText('THROW LINE',12,CPBY+27);
+   const col=g.view===1?['#E11D48','#9F1239']:['#2563EB','#1E3A8A'],b=g.ball,flying=b&&b.live;
+   const cups=g.cups[g.view].filter(x=>x.alive||x.dying<22);
+   cups.filter(x=>!flying||x.y<=b.y).forEach(x=>drawCup(x,col));
+   if(flying)drawBall(b.x,b.y,b.z,cpScale(b.y));else if(g.phase==='aim'||g.phase==='ai')drawBall(CPBX,CPBY,0,cpScale(CPBY));
+   if(flying)cups.filter(x=>x.y>b.y).forEach(x=>drawCup(x,col));
+   g.cups.forEach(r=>r.forEach(x=>{if(x.dying&&x.dying<22)x.dying++;}));
+   g.fx=g.fx.filter(p=>p.life>0);g.fx.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.18;p.life--;ctx.globalAlpha=Math.max(0,p.life/30);ctx.fillStyle=p.col;ctx.beginPath();ctx.arc(p.x,p.y,2.2,0,7);ctx.fill();ctx.globalAlpha=1;});
+   if(g.phase==='aim'&&g.drag){const pullY=g.drag.cy-g.drag.sy,pullX=g.drag.sx-g.drag.cx;if(pullY>6){const p=Math.min(pullY/150,1),vx=Math.max(-2.6,Math.min(2.6,pullX*.024)),vy=-(3.5+6.5*p);
+     guide(vx,vy,CPVZ,'rgba(255,255,255,.9)');ctx.fillStyle='#FFC83D';ctx.fillRect(12,CPH-24-p*170,6,p*170);
+     ctx.strokeStyle='rgba(255,200,61,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(CPBX,CPBY);ctx.lineTo(CPBX-pullX*.5,CPBY+Math.min(pullY,150)*.5);ctx.stroke();}}
+   if(g.phase==='ai'&&g.aim)guide(g.aim.vx,g.aim.vy,g.aim.vz,'rgba(252,165,165,.9)');};
+  let raf,last=performance.now(),acc=0;
+  const loop=now=>{acc+=Math.min(now-last,100);last=now;while(acc>=16.67){acc-=16.67;if(g.phase==='flight')stepBall();}
+   if(g.phase==='ai'&&!g.ai&&!g.over){g.ai=true;setTimeout(aiThrow,800);}
+   draw();raf=requestAnimationFrame(loop);};
+  raf=requestAnimationFrame(loop);
+  const pos=e=>{const r=c.getBoundingClientRect();return[(e.clientX-r.left)*CPW/r.width,(e.clientY-r.top)*CPH/r.height];};
+  c.onpointerdown=e=>{if(g.phase!=='aim'||g.over)return;c.setPointerCapture(e.pointerId);const[x,y]=pos(e);g.drag={sx:x,sy:y,cx:x,cy:y};};
+  c.onpointermove=e=>{if(!g.drag)return;const[x,y]=pos(e);g.drag.cx=x;g.drag.cy=y;};
+  c.onpointerup=()=>{const d=g.drag;g.drag=null;if(!d||g.phase!=='aim'||g.over)return;const pullY=d.cy-d.sy,pullX=d.sx-d.cx;if(pullY>12)fire(Math.max(-2.6,Math.min(2.6,pullX*.024)),-(3.5+6.5*Math.min(pullY/150,1)),CPVZ);};
+  c.onpointercancel=()=>{g.drag=null;};
+  return()=>cancelAnimationFrame(raf);
+ },[]);
+ const cupRow=(n,col)=>d('flex gap-1',...[0,1,2,3,4,5].map(i=>h('span',{key:i,className:'h-3 w-2.5 rounded-b-md rounded-t-[3px] border',style:{background:i<n?col:'rgba(255,255,255,.18)',borderColor:'rgba(255,255,255,.5)',opacity:i<n?1:.5}})));
+ return d('p-3 space-y-2',
+  d('flex items-center justify-between gap-2 rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center gap-1.5 text-sm font-extrabold','🔒 Escrow '+money(pool)),d('text-right text-[10px] leading-tight text-white/70',d('','Stake '+money(stake)+' each'),d('text-xs font-extrabold text-[#FFC83D]','Winner gets '+money(payout)))),
+  d('flex items-center gap-2',
+   d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(ui.turn===0?'ring-2 ring-[#FFC83D]':'opacity-70'),{}.k||'',h('div',{className:'rounded-2xl'},d('text-sm font-extrabold','You'),d('mb-0.5 text-[10px]','your cups'),cupRow(ui.cups[0],'#3B82F6'))),
+   d('text-center text-[10px] font-extrabold text-[#5C7467]','VS'),
+   d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(ui.turn===1?'ring-2 ring-[#FFC83D]':'opacity-70'),h('div',null,d('text-sm font-extrabold','Chidi O.'),d('mb-0.5 text-[10px]','his cups'),cupRow(ui.cups[1],'#F43F5E')))),
+  d('relative',h('canvas',{ref:cv,width:CPW*2,height:CPH*2,style:{width:'100%',height:'auto',touchAction:'none',borderRadius:20,display:'block'},'aria-label':'Cup pong table'}),
+   d('absolute left-2 top-2 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-extrabold text-white',ui.turn===0?'Target: Chidi O.’s red cups':'Target: your blue cups'),
+   ui.over&&d('pop absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-black/70',d('px-6 text-center text-xl font-extrabold text-white',ui.msg))),
+  d('text-center text-sm font-semibold text-white',ui.msg));
+}
+
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),Lg=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[scr,setScr]=useState('start'),[res,setRes]=useState(null),[before,setBefore]=useState(0),[rules,setRules]=useState(false);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake;
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBefore(bal);setBal(b=>b-stake);setLed(l=>[Lg(m,'AI stake locked in escrow',stake,'opp'),Lg(m,'Your stake locked in escrow',-stake,'lock'),...l]);setRes(null);setScr('game');};
+ const done=w=>{const m=mid;
+  if(w===1){setBal(b=>b+payout);setLed(l=>[Lg(m,'Payout credited to your wallet',payout,'release'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match won · escrow pool '+money(pool),0,'info'),...l]);}
+  else setLed(l=>[Lg(m,'Payout released to AI',payout,'opp'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match lost · escrow pool '+money(pool),0,'info'),...l]);
+  setRes(w);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-2 px-2 pb-4 pt-3 relative',...k);
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-5 px-3 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','CUP PONG'),d('text-sm text-white/80','Drag back, aim the arc, sink the ball. First to clear all 6 of the other side’s cups takes the pot.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play')));
+ const mine=led.filter(x=>x.mid===mid).reverse();
+ return shell(
+  d('rounded-[28px] bg-[#F2F6F3] text-[#12231B]',h(CupPongGame,{key:mid,stake,pool,payout,onEnd:done})),
+  res!==null&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('mt-1 text-5xl',res===1?'🏆':'😬'),d('text-2xl font-extrabold',res===1?'You cleared every cup!':'Chidi O. wins'),d('text-sm text-[#5C7467]',res===1?'Winner takes the escrow pool':'All 6 of your cups are gone')),
+   d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[res===1?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'||x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>{setScr('start');setRes(null);},className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

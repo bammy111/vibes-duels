@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mancala – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useRef,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const MKSEED=['#EF4444','#3B82F6','#22C55E','#FACC15','#F8FAFC','#A855F7','#F97316'];
+const mkStart=()=>[4,4,4,4,4,4,0,4,4,4,4,4,4,0];
+const mkPits=who=>who===0?[0,1,2,3,4,5]:[7,8,9,10,11,12];
+const mkMoves=(b,who)=>mkPits(who).filter(i=>b[i]>0);
+function mkMove(pits,pit,who){const b=[...pits];let n=b[pit];b[pit]=0;let pos=pit;const steps=[],skip=who===0?13:6,store=who===0?6:13;
+ while(n>0){pos=(pos+1)%14;if(pos===skip)continue;b[pos]++;n--;steps.push(pos);}
+ const last=pos,own=who===0?last<=5:(last>=7&&last<=12);let captured=0,cap=null;
+ if(own&&b[last]===1&&b[12-last]>0){captured=b[12-last]+1;b[store]+=captured;b[last]=0;b[12-last]=0;cap={pit:last,opp:12-last};}
+ return{b,steps,last,extra:last===store,captured,cap};}
+function mkApply(pits,pit,who){const m=mkMove(pits,pit,who);const b=m.b,hs=b.slice(0,6).reduce((a,x)=>a+x,0),as=b.slice(7,13).reduce((a,x)=>a+x,0);
+ if(hs===0||as===0){const n=[...b];n[6]+=hs;n[13]+=as;[0,1,2,3,4,5,7,8,9,10,11,12].forEach(i=>n[i]=0);return{...m,b:n,over:true,swept:[hs,as]};}
+ return{...m,over:false,swept:[0,0]};}
+function mkSearch(b,who,d,a,be){const ms=mkMoves(b,who);if(!ms.length||d===0)return b[13]-b[6];
+ let best=who===1?-1e9:1e9;
+ for(const m of ms){const r=mkApply(b,m,who);let v;
+  if(r.over){const df=r.b[13]-r.b[6];v=df*3+(df>0?100:df<0?-100:0);}else v=mkSearch(r.b,r.extra?who:1-who,d-1,a,be);
+  if(who===1){if(v>best)best=v;if(best>a)a=best;}else{if(v<best)best=v;if(best<be)be=best;}if(a>=be)break;}
+ return best;}
+function mkChoose(b,depth,slip){const ms=mkMoves(b,1),sc=ms.map(m=>{const r=mkApply(b,m,1);let v;if(r.over){const df=r.b[13]-r.b[6];v=df*3+(df>0?100:df<0?-100:0);}else v=mkSearch(r.b,r.extra?1:0,depth-1,-1e9,1e9);return{m,v:v+Math.random()*.01};});
+ sc.sort((x,y)=>y.v-x.v);return(slip&&sc.length>1&&Math.random()<slip)?sc[1].m:sc[0].m;}
+function MkSeeds({n,sx=1,sy=1,sz=14,max=24}){const k=Math.min(n,max);return h('div',{className:'pointer-events-none absolute inset-0'},...Array.from({length:k},(_,i)=>{const a=i*2.39996,r=Math.sqrt(i+.5)*(9/Math.sqrt(Math.max(k,6)))*1.9;
+  return h('span',{key:i,className:'absolute rounded-full',style:{width:sz+'%',height:sz*sx/sy+'%',left:(50+Math.cos(a)*r*sx*1.05)+'%',top:(50+Math.sin(a)*r*sy*1.05)+'%',transform:'translate(-50%,-50%)',background:'radial-gradient(circle at 30% 30%,#fff8,'+MKSEED[i%MKSEED.length]+' 55%)',boxShadow:'0 1px 2px rgba(0,0,0,.5)'}});}));}
+function MancalaGame({stake,pool,payout,onEnd}){
+ const endRef=useRef(),timers=useRef([]);endRef.current=onEnd;
+ const first=useRef(Math.random()<.5?0:1).current;
+ const init={pits:mkStart(),turn:first,phase:'idle',hl:null,msg:first===0?'You won the toss — pick one of your pits (bottom row).':'Chidi O. won the toss and moves first…',over:false,flash:null};
+ const [st,setSt]=useState(init),S=useRef(st);
+ const upd=f=>{S.current=f(S.current);setSt(S.current);};
+ const later=(fn,ms)=>{const id=setTimeout(fn,ms);timers.current.push(id);};
+ useEffect(()=>()=>timers.current.forEach(clearTimeout),[]);
+ const play=(pit,who)=>{const s0=S.current;if(s0.phase!=='idle'||s0.over)return;const m=mkApply(s0.pits,pit,who);const nm=who?'Chidi O.':'You';
+  upd(s=>{const p=[...s.pits];p[pit]=0;return{...s,pits:p,phase:'sow',hl:null,flash:null,msg:nm+' sows '+s0.pits[pit]+' seed'+(s0.pits[pit]>1?'s':'')+'…'};});
+  m.steps.forEach((pos,k)=>later(()=>upd(s=>{const p=[...s.pits];p[pos]++;return{...s,pits:p,hl:pos};}),300*(k+1)));
+  later(()=>{
+   const store=who===0?6:13,over=m.over;let msg='',flash=null;
+   if(m.cap){msg='🎯 '+nm+' captured '+m.captured+' seeds!';flash='CAPTURE +'+m.captured;}
+   else if(m.extra&&!over){msg='⭐ '+nm+' landed in the store — free turn!';flash='FREE TURN';}
+   else msg=nm+' sowed '+m.steps.length+'.';
+   upd(s=>({...s,pits:m.b,hl:m.cap?m.cap.pit:m.last,flash}));
+   if(over){const h6=m.b[6],a13=m.b[13],w=h6>a13?1:a13>h6?2:0;
+    later(()=>{upd(s=>({...s,over:true,phase:'done',hl:null,flash:null,msg:(m.swept[0]||m.swept[1]?'Remaining seeds swept into their owners’ stores. ':'')+(w===1?'You win '+h6+'–'+a13+'!':w===2?'Chidi O. wins '+a13+'–'+h6+'.':'Draw '+h6+'–'+a13+' — stakes refunded.')}));later(()=>endRef.current(w),2400);},700);return;}
+   const next=m.extra?who:1-who;
+   later(()=>upd(s=>({...s,turn:next,phase:'idle',msg:next===0?(msg+' Your move.'):msg+' Chidi O.’s move…'})),600);
+  },300*(m.steps.length+1)+150);};
+ useEffect(()=>{if(st.turn!==1||st.phase!=='idle'||st.over)return;const id=setTimeout(()=>{const s=S.current;if(s.turn!==1||s.phase!=='idle'||s.over)return;const ms=mkMoves(s.pits,1);if(ms.length)play(mkChoose(s.pits,5,.12),1);},950);return()=>clearTimeout(id);},[st.turn,st.phase,st.over]);
+ const can=st.turn===0&&st.phase==='idle'&&!st.over;
+ const pit=(i,top)=>{const n=st.pits[i],playable=can&&!top&&n>0;
+  return h('button',{key:i,onClick:()=>{if(playable)play(i,0);},disabled:!playable,'aria-label':(top?'Chidi pit ':'Pit ')+(top?i-6:i+1)+', '+n+' seeds',className:'relative aspect-square rounded-full transition '+(playable?'cursor-pointer active:scale-95 ':'cursor-default ')+(st.hl===i?'scale-110 ':''),
+   style:{background:'radial-gradient(circle at 50% 35%,#2b170a,#4a2a12 70%,#6b4220)',boxShadow:(playable?'0 0 0 3px #FFC83D,':'')+'inset 0 4px 8px rgba(0,0,0,.65),0 1px 0 rgba(255,255,255,.18)'+(st.hl===i?',0 0 14px 4px rgba(255,200,61,.8)':'')}},
+   h(MkSeeds,{n}),d('absolute -bottom-5 left-1/2 -translate-x-1/2 text-[11px] font-extrabold text-[#FDE68A] '+(top?'-top-5 bottom-auto':''),n));};
+ const store=(i,label,col)=>d('relative row-span-2 rounded-[36px] '+(st.hl===i?'scale-105 transition':''),
+  h('div',{className:'absolute inset-0 rounded-[36px]',style:{background:'radial-gradient(ellipse at 50% 30%,#2b170a,#4a2a12 70%,#6b4220)',boxShadow:'inset 0 6px 12px rgba(0,0,0,.65),0 1px 0 rgba(255,255,255,.18)'+(st.hl===i?',0 0 16px 5px rgba(255,200,61,.8)':'')}}),
+  h(MkSeeds,{n:st.pits[i],sx:.8,sy:2.2,sz:11,max:48}),
+  d('absolute left-1/2 top-1.5 -translate-x-1/2 rounded-full px-1.5 text-[9px] font-extrabold text-white',{}.k||'',h('span',{style:{background:col,borderRadius:9999,padding:'1px 6px'}},label)),
+  d('absolute bottom-1.5 left-1/2 -translate-x-1/2 text-2xl font-extrabold tabular-nums text-[#FDE68A]',st.pits[i]));
+ return d('p-3 space-y-3',
+  d('flex items-center justify-between gap-2 rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center gap-1.5 text-sm font-extrabold','🔒 Escrow '+money(pool)),d('text-right text-[10px] leading-tight text-white/70',d('','Stake '+money(stake)+' each'),d('text-xs font-extrabold text-[#FFC83D]','Winner gets '+money(payout)))),
+  d('flex items-center gap-2',
+   d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(st.turn===0&&!st.over?'ring-2 ring-[#FFC83D]':'opacity-75'),d('text-sm font-extrabold','You'),d('text-2xl font-extrabold tabular-nums',st.pits[6]),d('text-[10px] text-white/60','store · right')),
+   d('text-center text-[10px] font-extrabold text-[#5C7467]','VS'),
+   d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(st.turn===1&&!st.over?'ring-2 ring-[#FFC83D]':'opacity-75'),d('text-sm font-extrabold','Chidi O.'),d('text-2xl font-extrabold tabular-nums',st.pits[13]),d('text-[10px] text-white/60','store · left'))),
+  d('relative rounded-[28px] p-3',h('div',{className:'rounded-[24px] p-3',style:{background:'linear-gradient(135deg,#A8703A,#7A4B22 55%,#5E3718)',boxShadow:'inset 0 2px 0 rgba(255,255,255,.25),inset 0 -6px 12px rgba(0,0,0,.35),0 8px 18px rgba(0,0,0,.35)'}},
+   d('mb-1 flex justify-between text-[10px] font-extrabold text-[#FDE68A]/90',d('','◀ Chidi O.'),d('','↺ counter-clockwise'),d('','You ▶')),
+   d('grid grid-cols-[1.25fr_repeat(6,1fr)_1.25fr] grid-rows-2 gap-x-2 gap-y-7 py-1',
+    store(13,'CHIDI','#C2410C'),...[12,11,10,9,8,7].map(i=>pit(i,true)),store(6,'YOU','#B7791F'),...[0,1,2,3,4,5].map(i=>pit(i,false)))),
+   st.flash&&d('pop pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-3xl font-extrabold text-[#FFC83D] drop-shadow-[0_2px_4px_rgba(0,0,0,.7)]',st.flash),
+   st.over&&d('pop absolute inset-0 z-20 grid place-items-center rounded-[28px] bg-black/70 p-4',d('text-center text-lg font-extrabold text-white',st.msg))),
+  d('min-h-[2.6rem] text-center text-sm font-semibold text-white',st.msg));
+}
+
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),Lg=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[scr,setScr]=useState('start'),[res,setRes]=useState(null),[before,setBefore]=useState(0),[rules,setRules]=useState(false);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake;
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBefore(bal);setBal(b=>b-stake);setLed(l=>[Lg(m,'AI stake locked in escrow',stake,'opp'),Lg(m,'Your stake locked in escrow',-stake,'lock'),...l]);setRes(null);setScr('game');};
+ const done=w=>{const m=mid;
+  if(w===0){setBal(b=>b+stake);setLed(l=>[Lg(m,'AI stake refunded',stake,'opp'),Lg(m,'Your stake refunded (no fee)',stake,'release'),Lg(m,'Match drawn · equal stores',0,'info'),...l]);setRes(0);return;}
+  if(w===1){setBal(b=>b+payout);setLed(l=>[Lg(m,'Payout credited to your wallet',payout,'release'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match won · escrow pool '+money(pool),0,'info'),...l]);}
+  else setLed(l=>[Lg(m,'Payout released to AI',payout,'opp'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match lost · escrow pool '+money(pool),0,'info'),...l]);
+  setRes(w);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-2 px-2 pb-4 pt-3 relative',...k);
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-5 px-3 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','MANCALA'),d('text-sm text-white/80','Sow your seeds counter-clockwise, grab free turns and captures, and finish with the bigger store to take the pot.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play')));
+ const mine=led.filter(x=>x.mid===mid).reverse();
+ return shell(
+  d('rounded-[28px] bg-[#F2F6F3] text-[#12231B]',h(MancalaGame,{key:mid,stake,pool,payout,onEnd:done})),
+  res!==null&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('mt-1 text-5xl',res===1?'🏆':res===0?'🤝':'😬'),d('text-2xl font-extrabold',res===1?'You won the store count!':res===0?'Dead heat':'Chidi O. wins'),d('text-sm text-[#5C7467]',res===1?'Winner takes the escrow pool':res===0?'Equal stores — stakes refunded':'Chidi O. banked more seeds')),
+   res===0?d('mt-3 rounded-2xl bg-[#EAF3ED] p-4 text-sm font-semibold','Both stakes refunded — '+money(stake)+' back to each player. No platform fee.'):d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[res===1?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'||x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>{setScr('start');setRes(null);},className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

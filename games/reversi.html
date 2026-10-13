@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reversi – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useRef,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const RVD=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const RVW=[[100,-20,10,5,5,10,-20,100],[-20,-50,-2,-2,-2,-2,-50,-20],[10,-2,-1,-1,-1,-1,-2,10],[5,-2,-1,-1,-1,-1,-2,5],[5,-2,-1,-1,-1,-1,-2,5],[10,-2,-1,-1,-1,-1,-2,10],[-20,-50,-2,-2,-2,-2,-50,-20],[100,-20,10,5,5,10,-20,100]];
+const rvStart=()=>{const b=Array(64).fill(0);b[27]=1;b[36]=1;b[28]=2;b[35]=2;return b;};
+function rvFlips(b,r,c,me){if(b[r*8+c])return[];const op=3-me,out=[];
+ for(const[dr,dc]of RVD){const line=[];let rr=r+dr,cc=c+dc;while(rr>=0&&rr<8&&cc>=0&&cc<8&&b[rr*8+cc]===op){line.push(rr*8+cc);rr+=dr;cc+=dc;}
+  if(line.length&&rr>=0&&rr<8&&cc>=0&&cc<8&&b[rr*8+cc]===me)out.push(...line);}
+ return out;}
+function rvMoves(b,me){const m=[];for(let r=0;r<8;r++)for(let c=0;c<8;c++){const f=rvFlips(b,r,c,me);if(f.length)m.push({r,c,f});}return m;}
+function rvPlay(b,mv,me){const n=[...b];n[mv.r*8+mv.c]=me;mv.f.forEach(i=>n[i]=me);return n;}
+const rvCount=b=>{let k=0,w=0;for(const x of b){if(x===1)k++;else if(x===2)w++;}return[k,w];};
+function rvEval(b,me){let s=0;for(let i=0;i<64;i++){if(b[i]===me)s+=RVW[i>>3][i&7];else if(b[i]===3-me)s-=RVW[i>>3][i&7];}
+ s+=6*(rvMoves(b,me).length-rvMoves(b,3-me).length);return s;}
+function rvNega(b,me,d,a,be,passed){const ms=rvMoves(b,me);
+ if(!ms.length){if(passed){const[k,w]=rvCount(b),df=me===1?k-w:w-k;return df*50;}return-rvNega(b,3-me,d,-be,-a,true);}
+ if(d===0)return rvEval(b,me);
+ ms.sort((x,y)=>RVW[y.r][y.c]-RVW[x.r][x.c]);
+ for(const mv of ms){const v=-rvNega(rvPlay(b,mv,me),3-me,d-1,-be,-a,false);if(v>a)a=v;if(a>=be)break;}return a;}
+function rvChoose(b,me,depth,slip){const ms=rvMoves(b,me);if(!ms.length)return null;
+ const sc=ms.map(mv=>({mv,v:-rvNega(rvPlay(b,mv,me),3-me,depth-1,-1e9,1e9,false)+Math.random()*.01}));sc.sort((x,y)=>y.v-x.v);
+ return(slip&&sc.length>1&&Math.random()<slip)?sc[1].mv:sc[0].mv;}
+function ReversiGame({stake,pool,payout,onEnd}){
+ const endRef=useRef(),timers=useRef([]);endRef.current=onEnd;
+ const init={b:rvStart(),turn:1,last:null,flips:{},msg:'You are Black and move first — tap a highlighted square.',over:false,busy:false};
+ const [st,setSt]=useState(init),S=useRef(st);
+ const upd=f=>{S.current=f(S.current);setSt(S.current);};
+ const later=(fn,ms)=>{const id=setTimeout(fn,ms);timers.current.push(id);};
+ useEffect(()=>()=>timers.current.forEach(clearTimeout),[]);
+ const place=(mv,me)=>{const s0=S.current;if(s0.busy||s0.over)return;const nb=rvPlay(s0.b,mv,me),fl={};mv.f.forEach(i=>{const d=Math.max(Math.abs((i>>3)-mv.r),Math.abs((i&7)-mv.c));fl[i]=d*90;});
+  const who=me===1?'You':'Chidi O.';
+  upd(s=>({...s,b:nb,last:[mv.r,mv.c],flips:fl,busy:true,msg:who+' flipped '+mv.f.length+' disc'+(mv.f.length>1?'s':'')+'.'}));
+  later(()=>{const s=S.current,opp=3-me,om=rvMoves(s.b,opp),mm=rvMoves(s.b,me),[k,w]=rvCount(s.b);
+   if(!om.length&&!mm.length||k+w===64){const win=k>w?1:w>k?2:0;
+    upd(s2=>({...s2,over:true,busy:true,msg:(k+w===64?'Board full. ':'Neither side can move. ')+(win===1?'You win '+k+'–'+w+'!':win===2?'Chidi O. wins '+w+'–'+k+'.':'Draw '+k+'–'+w+' — stakes refunded.')}));
+    later(()=>endRef.current(win),2400);return;}
+   if(!om.length){upd(s2=>({...s2,turn:me,busy:false,msg:(opp===1?'You have':'Chidi O. has')+' no legal moves — turn passed. '+(me===1?'Your move.':'Chidi O. moves again…')}));return;}
+   upd(s2=>({...s2,turn:opp,busy:false,msg:opp===1?'Your move.':'Chidi O. is thinking…'}));},90*7+520);};
+ useEffect(()=>{if(st.turn!==2||st.busy||st.over)return;const id=setTimeout(()=>{const s=S.current;if(s.turn!==2||s.busy||s.over)return;const lm=rvMoves(s.b,2),mv=Math.random()<.35?lm[Math.floor(Math.random()*lm.length)]:rvChoose(s.b,2,2,.45);if(mv)place(mv,2);},850);return()=>clearTimeout(id);},[st.turn,st.busy,st.over]);
+ const legal=st.turn===1&&!st.busy&&!st.over?rvMoves(st.b,1):[];
+ const[k,w]=rvCount(st.b);
+ const cells=[];
+ for(let i=0;i<64;i++){const r=i>>3,c=i&7,v=st.b[i],mv=legal.find(m=>m.r===r&&m.c===c),isLast=st.last&&st.last[0]===r&&st.last[1]===c;
+  cells.push(h('button',{key:i,onClick:()=>{if(mv)place(mv,1);},disabled:!mv,'aria-label':'Cell '+'abcdefgh'[c]+(8-r)+(v?(v===1?' black':' white'):mv?' legal move':' empty'),className:'relative aspect-square '+(mv?'cursor-pointer active:scale-95':'cursor-default'),
+   style:{background:(r+c)%2?'#1B7440':'#1F8048',boxShadow:'inset 0 0 0 .5px rgba(0,0,0,.35)'}},
+   v?h('div',{className:'absolute inset-[9%] '+(isLast?'pop':''),style:{perspective:'300px'}},
+     h('div',{className:'relative h-full w-full',style:{transformStyle:'preserve-3d',transform:'rotateY('+(v===2?180:0)+'deg)',transition:'transform .5s ease '+(st.flips[i]||0)+'ms'}},
+      h('div',{className:'absolute inset-0 rounded-full',style:{backfaceVisibility:'hidden',background:'radial-gradient(circle at 32% 28%,#6b7280,#111827 60%,#000)',boxShadow:'0 2px 4px rgba(0,0,0,.55)'+(isLast?',0 0 0 2.5px #FFC83D':'')}}),
+      h('div',{className:'absolute inset-0 rounded-full',style:{backfaceVisibility:'hidden',transform:'rotateY(180deg)',background:'radial-gradient(circle at 32% 28%,#fff,#e5e7eb 60%,#9ca3af)',boxShadow:'0 2px 4px rgba(0,0,0,.55)'+(isLast?',0 0 0 2.5px #FFC83D':'')}}))):null,
+   mv&&h('span',{className:'absolute left-1/2 top-1/2 h-[26%] w-[26%] -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full',style:{background:'rgba(255,200,61,.75)',boxShadow:'0 0 0 2px rgba(255,255,255,.5)'}})));}
+ const card=(me,name)=>d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(st.turn===me&&!st.over?'ring-2 ring-[#FFC83D]':'opacity-80'),
+  d('flex items-center gap-2',h('span',{className:'inline-block h-4 w-4 rounded-full border border-white/60',style:{background:me===1?'#111827':'#F3F4F6'}}),d('text-sm font-extrabold',name)),d('text-3xl font-extrabold leading-none tabular-nums',me===1?k:w),d('text-[10px] text-white/60',me===1?'Black · moves first':'White'));
+ return d('p-3 space-y-2',
+  d('flex items-center justify-between gap-2 rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center gap-1.5 text-sm font-extrabold','🔒 Escrow '+money(pool)),d('text-right text-[10px] leading-tight text-white/70',d('','Stake '+money(stake)+' each'),d('text-xs font-extrabold text-[#FFC83D]','Winner gets '+money(payout)))),
+  d('flex items-center gap-2',card(1,'You'),d('text-center text-[10px] font-extrabold text-[#5C7467]','VS'),card(2,'Chidi O.')),
+  d('relative rounded-2xl p-2 shadow-xl',h('div',{className:'rounded-xl p-1.5',style:{background:'linear-gradient(135deg,#6B4423,#4A2E15)',boxShadow:'inset 0 2px 6px rgba(0,0,0,.45)'}},
+   h('div',{className:'grid grid-cols-8 overflow-hidden rounded-md'},...cells)),
+   st.over&&d('pop absolute inset-0 z-20 grid place-items-center rounded-2xl bg-black/70 p-4',d('text-center text-lg font-extrabold text-white',st.msg))),
+  d('min-h-[2.4rem] text-center text-sm font-semibold text-white',st.msg));
+}
+
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),Lg=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[scr,setScr]=useState('start'),[res,setRes]=useState(null),[before,setBefore]=useState(0),[rules,setRules]=useState(false);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake;
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBefore(bal);setBal(b=>b-stake);setLed(l=>[Lg(m,'AI stake locked in escrow',stake,'opp'),Lg(m,'Your stake locked in escrow',-stake,'lock'),...l]);setRes(null);setScr('game');};
+ const done=w=>{const m=mid;
+  if(w===0){setBal(b=>b+stake);setLed(l=>[Lg(m,'AI stake refunded',stake,'opp'),Lg(m,'Your stake refunded (no fee)',stake,'release'),Lg(m,'Match drawn · equal discs',0,'info'),...l]);setRes(0);return;}
+  if(w===1){setBal(b=>b+payout);setLed(l=>[Lg(m,'Payout credited to your wallet',payout,'release'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match won · escrow pool '+money(pool),0,'info'),...l]);}
+  else setLed(l=>[Lg(m,'Payout released to AI',payout,'opp'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match lost · escrow pool '+money(pool),0,'info'),...l]);
+  setRes(w);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-2 px-2 pb-4 pt-3 relative',...k);
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-5 px-3 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','REVERSI'),d('text-sm text-white/80','Trap and flip Chidi O.’s discs. You play Black and move first — own more discs at the end to take the pot.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play')));
+ const mine=led.filter(x=>x.mid===mid).reverse();
+ return shell(
+  d('rounded-[28px] bg-[#F2F6F3] text-[#12231B]',h(ReversiGame,{key:mid,stake,pool,payout,onEnd:done})),
+  res!==null&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('mt-1 text-5xl',res===1?'🏆':res===0?'🤝':'😬'),d('text-2xl font-extrabold',res===1?'You own the board!':res===0?'Dead heat':'Chidi O. wins'),d('text-sm text-[#5C7467]',res===1?'Winner takes the escrow pool':res===0?'Equal discs — stakes refunded':'Chidi O. owns more discs')),
+   res===0?d('mt-3 rounded-2xl bg-[#EAF3ED] p-4 text-sm font-semibold','Both stakes refunded — '+money(stake)+' back to each player. No platform fee.'):d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[res===1?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'||x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>{setScr('start');setRes(null);},className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

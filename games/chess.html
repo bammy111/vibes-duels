@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chess Duel – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+/* ---------- chess engine ---------- */
+const ins=(r,c)=>r>=0&&r<8&&c>=0&&c<8,sqn=i=>'abcdefgh'[i&7]+(8-(i>>3));
+const ON=[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],OK=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]],DR=[[-1,0],[1,0],[0,-1],[0,1]],DB=[[-1,-1],[-1,1],[1,-1],[1,1]];
+const VAL={p:100,n:320,b:330,r:500,q:900,k:0};
+const fromFen=f=>{const b=Array(64).fill(null);let i=0;for(const ch of f){if(ch==='/')continue;if(/\d/.test(ch)){i+=+ch;continue;}b[i++]=(ch===ch.toUpperCase()?'w':'b')+ch.toLowerCase();}return b;};
+const init=()=>({b:fromFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR'),turn:'w',cast:{wk:1,wq:1,bk:1,bq:1},ep:null,half:0});
+function attacked(b,sq,by){const r=sq>>3,c=sq&7,pr=by==='w'?r+1:r-1;
+ for(const dc of[-1,1]){const cc=c+dc;if(ins(pr,cc)&&b[pr*8+cc]===by+'p')return true;}
+ for(const[dr,dc]of ON){const rr=r+dr,cc=c+dc;if(ins(rr,cc)&&b[rr*8+cc]===by+'n')return true;}
+ for(const[dr,dc]of OK){const rr=r+dr,cc=c+dc;if(ins(rr,cc)&&b[rr*8+cc]===by+'k')return true;}
+ for(const[dirs,ts]of[[DR,'rq'],[DB,'bq']])for(const[dr,dc]of dirs){let rr=r+dr,cc=c+dc;while(ins(rr,cc)){const p=b[rr*8+cc];if(p){if(p[0]===by&&ts.includes(p[1]))return true;break;}rr+=dr;cc+=dc;}}
+ return false;}
+const inChk=(b,col)=>attacked(b,b.indexOf(col+'k'),col==='w'?'b':'w');
+function pseudo(s){const{b,turn:me,cast,ep}=s,op=me==='w'?'b':'w',out=[];
+ const add=(f,t,x={})=>out.push({from:f,to:t,...x}),addP=(f,t,lr)=>{if(lr)for(const q of['q','r','b','n'])add(f,t,{promo:q});else add(f,t);};
+ for(let i=0;i<64;i++){const p=b[i];if(!p||p[0]!==me)continue;const t=p[1],r=i>>3,c=i&7;
+  if(t==='p'){const dr=me==='w'?-1:1,st=me==='w'?6:1,lr=me==='w'?0:7,r1=r+dr;
+   if(ins(r1,c)&&!b[r1*8+c]){addP(i,r1*8+c,r1===lr);if(r===st&&!b[(r+2*dr)*8+c])add(i,(r+2*dr)*8+c,{dbl:true});}
+   for(const dc of[-1,1]){const cc=c+dc;if(!ins(r1,cc))continue;const to=r1*8+cc,q=b[to];if(q&&q[0]===op)addP(i,to,r1===lr);else if(to===ep)add(i,to,{ep:true});}}
+  else if(t==='n'||t==='k'){for(const[dr,dc]of(t==='n'?ON:OK)){const rr=r+dr,cc=c+dc;if(!ins(rr,cc))continue;const q=b[rr*8+cc];if(!q||q[0]===op)add(i,rr*8+cc);}
+   if(t==='k'){const row=me==='w'?56:0;if(i===row+4&&!attacked(b,i,op)){
+    if(cast[me+'k']&&!b[row+5]&&!b[row+6]&&b[row+7]===me+'r'&&!attacked(b,row+5,op)&&!attacked(b,row+6,op))add(i,row+6,{castle:true});
+    if(cast[me+'q']&&!b[row+3]&&!b[row+2]&&!b[row+1]&&b[row]===me+'r'&&!attacked(b,row+3,op)&&!attacked(b,row+2,op))add(i,row+2,{castle:true});}}}
+  else for(const[dr,dc]of(t==='r'?DR:t==='b'?DB:[...DR,...DB])){let rr=r+dr,cc=c+dc;while(ins(rr,cc)){const q=b[rr*8+cc];if(!q)add(i,rr*8+cc);else{if(q[0]===op)add(i,rr*8+cc);break;}rr+=dr;cc+=dc;}}}
+ return out;}
+function apply(s,m){const b=[...s.b],p=b[m.from],me=p[0],cast={...s.cast};let ep=null,half=s.half+1;
+ if(p[1]==='p'||b[m.to])half=0;b[m.to]=p;b[m.from]=null;
+ if(m.ep)b[m.to+(me==='w'?8:-8)]=null;if(m.dbl)ep=(m.from+m.to)/2;if(m.promo)b[m.to]=me+m.promo;
+ if(m.castle){if(m.to%8===6){b[m.to+1]=null;b[m.to-1]=me+'r';}else{b[m.to-2]=null;b[m.to+1]=me+'r';}}
+ if(p==='wk')cast.wk=cast.wq=0;if(p==='bk')cast.bk=cast.bq=0;
+ for(const q of[m.from,m.to]){if(q===63)cast.wk=0;if(q===56)cast.wq=0;if(q===7)cast.bk=0;if(q===0)cast.bq=0;}
+ return{b,turn:me==='w'?'b':'w',cast,ep,half};}
+const legal=s=>pseudo(s).filter(m=>!inChk(apply(s,m).b,s.turn));
+function status(s){const ms=legal(s),chk=inChk(s.b,s.turn);
+ if(!ms.length)return chk?{w:s.turn==='w'?'b':'w',reason:'Checkmate'}:{w:'draw',reason:'Stalemate'};
+ const pcs=s.b.filter(p=>p&&p[1]!=='k'),minor=pcs.every(p=>p[1]==='n'||p[1]==='b');
+ if(!pcs.length||(minor&&pcs.length===1))return{w:'draw',reason:'Insufficient material'};
+ if(s.half>=100)return{w:'draw',reason:'50-move rule'};return{chk};}
+function evalS(s){let v=0,mat={w:0,b:0},np={w:0,b:0},ks={};for(let i=0;i<64;i++){const p=s.b[i];if(!p)continue;const t=p[1],r=i>>3,c=i&7,cen=7-Math.abs(c-3.5)-Math.abs(r-3.5),adv=p[0]==='w'?7-r:r;let x=VAL[t];
+  if(t==='p')x+=adv*7+cen*2;else if(t==='n'||t==='b')x+=cen*5;else if(t==='q')x+=cen;else if(t==='k')x-=adv*3;v+=p[0]==='w'?x:-x;mat[p[0]]+=VAL[t];if(t!=='p'&&t!=='k')np[p[0]]+=VAL[t];if(t==='k')ks[p[0]]=i;}
+ for(const[a,o]of[['w','b'],['b','w']])if(mat[a]-mat[o]>=300&&np[o]<=600){const ek=ks[o],ak=ks[a],e=Math.abs((ek>>3)-3.5)+Math.abs((ek&7)-3.5),dist=Math.abs((ek>>3)-(ak>>3))+Math.abs((ek&7)-(ak&7));const bonus=e*20+(14-dist)*8;v+=a==='w'?bonus:-bonus;}
+ return s.turn==='w'?v:-v;}
+const ord=(m,s)=>(s.b[m.to]?VAL[s.b[m.to][1]]*10-VAL[s.b[m.from][1]]:0)+(m.promo==='q'?800:0);
+function qs(s,a,bt,ply){const stand=evalS(s);if(ply>=6||stand>=bt)return stand;if(stand>a)a=stand;const ms=legal(s).filter(m=>s.b[m.to]||m.ep||m.promo==='q');if(!ms.length)return stand;ms.sort((x,y)=>ord(y,s)-ord(x,s));for(const m of ms){const v=-qs(apply(s,m),-bt,-a,ply+1);if(v>a)a=v;if(a>=bt)break;}return a;}
+function nega(s,dp,a,bt){const ms=legal(s);if(!ms.length)return inChk(s.b,s.turn)?-99000-dp:0;if(!dp)return qs(s,a,bt,0);
+ ms.sort((x,y)=>ord(y,s)-ord(x,s));for(const m of ms){const v=-nega(apply(s,m),dp-1,-bt,-a);if(v>a)a=v;if(a>=bt)break;}return a;}
+function aiMove(s,depth){const ms=legal(s);depth=depth||(s.b.filter(Boolean).length<=12?4:3);ms.sort((x,y)=>ord(y,s)-ord(x,s));let best=-1e9,pick=[];
+ for(const m of ms){const v=-nega(apply(s,m),depth-1,-1e9,-(best-6));if(v>best+6){best=v;pick=[m];}else if(v>best-6){pick.push(m);if(v>best)best=v;}}
+ return pick[Math.floor(Math.random()*pick.length)]||ms[0];}
+
+/* ---------- icons ---------- */
+const BASE='M9.5 40v-2.2a1.8 1.8 0 0 1 1.8-1.8h22.4a1.8 1.8 0 0 1 1.8 1.8V40z';
+const PCS={
+ p:{s:['M17.6 19.6h9.8l-1.5 3c3.5 2.5 5.5 6.4 5.9 10.9H13.2c.4-4.5 2.4-8.4 5.9-10.9z','M12.2 33.5h20.6l1.2 2.5H11z'],c:[[22.5,12.3,5]],a:['M17.2 19.6h10.6']},
+ r:{s:['M14.5 18.5h16l-1 4.5v8l3 5H12.5l3-5v-8z','M12 9h5v3h3.2V9h4.6v3H28V9h5v9.5H12z'],a:['M12 18.5h21','M15.4 26.5h14.2']},
+ n:{s:['M13 36C13 31 14 28 17 25.5L12.6 26 9 24.7 8.3 22.4 9.5 20.3 13.2 15.8 13.8 11.2 15 8.4 17.4 10.6C19 9.2 21.4 8.7 24 9.3 30.4 10.8 35.6 17 36 26 36.2 29.5 35.8 33 35.5 36Z'],ac:[[17.8,16.3,1.3],[10.3,22.5,.8]],a:['M26 11.4c3.2 2.4 6 6.3 6.4 12.5','M12.8 25.2l3.4-.4']},
+ b:{s:['M16.8 32.2h11.4l1.6 3.8H15.2z','M15 29h15v3.2H15z','M22.5 10c4.6 3.4 8 7.8 8 12.4 0 3-1.4 5-3 6.6h-10c-1.6-1.6-3-3.6-3-6.6 0-4.6 3.4-9 8-12.4z'],c:[[22.5,7.2,2.5]],a:['M19.2 17.8l6.2 6.2']},
+ q:{s:['M13.2 30.5h18.6l1.6 5.5H11.6z','M9.5 15.5L13.2 30.5H31.8L35.5 15.5 29.6 22 29 12 25.4 21.5 22.5 9.5 19.6 21.5 16 12 15.4 22Z'],c:[[9.5,14.2,2.1],[16,10.8,2.1],[22.5,8.3,2.3],[29,10.8,2.1],[35.5,14.2,2.1]],a:['M13.8 33.2h17.4']},
+ k:{s:['M12 32.5h21l1.8 3.5H10.2z','M22.5 13.5c5.5 0 10 3.4 10 8 0 2.5-1.2 4-2.4 5l2.4 5.5H12.5l2.4-5.5c-1.2-1-2.4-2.5-2.4-5 0-4.6 4.5-8 10-8z','M20.5 3.5h4v3h3v4h-3v3h-4v-3h-3v-4h3z'],a:['M15.2 28.4h14.6','M17.5 20.2c1.4-2 3-3 5-3.2']}};
+const Piece=({p,z})=>{const w=p[0]==='w',P=PCS[p[1]],fill=w?'url(#pgw)':'url(#pgb)',stroke=w?'#1B2430':'#05080C',acc=w?'#1B2430':'#DCE3EC',sp={fill,stroke,strokeWidth:1.4};
+ return h('svg',{viewBox:'0 0 45 45',width:z,height:z,strokeLinejoin:'round',strokeLinecap:'round',style:{filter:w?'drop-shadow(0 1.5px 1.5px rgba(0,0,0,.4))':'drop-shadow(0 1.5px 1.5px rgba(0,0,0,.45))'},'aria-label':(w?'White ':'Black ')+{p:'pawn',r:'rook',n:'knight',b:'bishop',q:'queen',k:'king'}[p[1]]},
+  h('defs',null,h('linearGradient',{id:'pgw',x1:0,y1:0,x2:1,y2:1},h('stop',{offset:0,stopColor:'#FFFFFF'}),h('stop',{offset:1,stopColor:'#C5CEDA'})),h('linearGradient',{id:'pgb',x1:0,y1:0,x2:1,y2:1},h('stop',{offset:0,stopColor:'#5A6477'}),h('stop',{offset:1,stopColor:'#141922'}))),
+  h('path',{d:BASE,...sp}),...P.s.map((d,i)=>h('path',{key:'s'+i,d,...sp})),...(P.c||[]).map((c,i)=>h('circle',{key:'c'+i,cx:c[0],cy:c[1],r:c[2],...sp})),
+  ...(P.a||[]).map((d,i)=>h('path',{key:'a'+i,d,fill:'none',stroke:acc,strokeWidth:1.3,opacity:.75})),...(P.ac||[]).map((c,i)=>h('circle',{key:'e'+i,cx:c[0],cy:c[1],r:c[2],fill:acc})));};
+
+/* ---------- app ---------- */
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),L=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[rules,setRules]=useState(false),[conf,setConf]=useState(false),[g,setG]=useState(null);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake,addL=es=>setLed(l=>[...es,...l]);
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBal(b=>b-stake);addL([L(m,'AI stake locked in escrow',stake,'opp'),L(m,'Your stake locked in escrow',-stake,'lock')]);
+  setG({s:init(),sel:null,last:null,msg:'Your move — you are White.',over:null,promo:null,caps:{w:[],b:[]},before:bal,mid:m});setConf(false);};
+ const finish=(w,reason,m)=>{
+  if(w==='w'){setBal(b=>b+payout);addL([L(m,'Payout credited to your wallet',payout,'release'),L(m,'Platform service fee (5%)',-rake,'rake'),L(m,'Match won · escrow pool '+money(pool),0,'info')]);}
+  else if(w==='b')addL([L(m,'Payout released to AI',payout,'opp'),L(m,'Platform service fee (5%)',-rake,'rake'),L(m,'Match lost · escrow pool '+money(pool),0,'info')]);
+  else{setBal(b=>b+stake);addL([L(m,'AI stake refunded',stake,'opp'),L(m,'Your stake refunded (no fee)',stake,'release'),L(m,'Match drawn · '+reason,0,'info')]);}};
+ const commit=(m,who)=>{const s=g.s,cap=s.b[m.to]||(m.ep?s.b[m.to+(who==='w'?8:-8)]:null),ns=apply(s,m),caps={w:[...g.caps.w],b:[...g.caps.b]};
+  if(cap)caps[who].push(cap);const st=status(ns),nm=who==='w'?'You':'AI',pc=s.b[m.from][1].toUpperCase();
+  const txt=(m.castle?'castled':(pc==='P'?'':pc)+sqn(m.from)+(cap?'×':'→')+sqn(m.to)+(m.promo?'='+m.promo.toUpperCase():''));
+  const msg=st.w?'':(who==='w'?'AI is thinking…':'Your move')+(st.chk?' — CHECK!':'')+(txt?' · '+nm+': '+txt:'');
+  setG({...g,s:ns,sel:null,last:{from:m.from,to:m.to},caps,promo:null,msg,over:st.w?{w:st.w,reason:st.reason}:null});
+  if(st.w)setTimeout(()=>finish(st.w,st.reason,g.mid),350);};
+ useEffect(()=>{if(!g||g.over||g.s.turn!=='b')return;const t=setTimeout(()=>commit(aiMove(g.s),'b'),650);return()=>clearTimeout(t);},[g&&g.s,g&&g.over]);
+ const click=i=>{if(!g||g.over||g.s.turn!=='w'||g.promo)return;const mv=legal(g.s),mine=g.s.b[i]&&g.s.b[i][0]==='w';
+  if(g.sel!==null){const cand=mv.filter(m=>m.from===g.sel&&m.to===i);if(cand.length){if(cand[0].promo)setG({...g,promo:{cand}});else commit(cand[0],'w');return;}}
+  setG({...g,sel:mine&&mv.some(m=>m.from===i)?i:null});};
+ const resign=()=>{if(!conf){setConf(true);return;}setConf(false);setG({...g,over:{w:'b',reason:'You resigned'},sel:null});finish('b','You resigned',g.mid);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-3 px-3 pb-4 pt-3 relative',...k);
+
+ if(!g)return shell(d('flex flex-1 flex-col items-center justify-center gap-5 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','CHESS'),d('text-sm text-white/80','Full-rules 1v1 chess against the AI. Checkmate wins the pot.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),
+   h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play'),
+  h('button',{onClick:()=>setRules(true),className:'text-sm text-white/70 underline'},'How to play'),rules&&Rules(()=>setRules(false))));
+
+ const mv=g.over?[]:legal(g.s),dests=g.sel!==null?mv.filter(m=>m.from===g.sel):[],kingChk=inChk(g.s.b,g.s.turn)?g.s.b.indexOf(g.s.turn+'k'):-1;
+ const adv=g.caps.w.reduce((a,p)=>a+VAL[p[1]]/100,0)-g.caps.b.reduce((a,p)=>a+VAL[p[1]]/100,0);
+ const bar=(k,name)=>{const mine=g.caps[k],act=g.s.turn===k&&!g.over,a=k==='w'?adv:-adv;
+  return d('flex items-center gap-3 rounded-2xl px-3 py-2 transition '+(act?'bg-white/15 ring-2 ring-[#FFC83D]':'bg-white/5'),
+   d('flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10',h(Piece,{p:k+'k',z:28})),
+   d('min-w-0 flex-1',d('text-sm font-extrabold',name),d('flex min-h-[18px] items-center -space-x-1.5',...mine.map((p,i)=>h('span',{key:i},h(Piece,{p,z:18}))),a>0&&d('ml-2 text-[11px] font-bold text-[#FFC83D]','+'+a))),
+   act&&d('rounded-full bg-[#FFC83D] px-2.5 py-1 text-[11px] font-extrabold text-[#12231B]',k==='w'?'YOUR TURN':'THINKING'));};
+ const mine=led.filter(x=>x.mid===g.mid).reverse();
+ return shell(
+  d('sticky top-0 z-10 flex items-center justify-between gap-2 rounded-2xl bg-[#0E7C4B] px-4 py-2.5 shadow-lg',
+   d('flex items-center gap-2 text-sm font-extrabold','🔒 Pot '+money(pool)),
+   d('text-right text-[11px] leading-tight text-white/85',d('','Winner gets '+money(payout)),d('font-bold','Wallet '+money(bal)))),
+  bar('b','AI Opponent · Black'),
+  d('rounded-xl p-1.5 shadow-2xl',h('div',{className:'relative aspect-square w-full select-none overflow-hidden rounded-lg'},
+   h('div',{className:'absolute inset-0',style:{display:'grid',gridTemplateColumns:'repeat(8,1fr)'}},
+    ...Array.from({length:64},(_,i)=>{const r=i>>3,c=i&7,dark=(r+c)%2===1,isSel=g.sel===i,isLast=g.last&&(g.last.from===i||g.last.to===i),dm=dests.find(m=>m.to===i),cap=dm&&(g.s.b[i]||dm.ep);
+     return h('button',{key:i,onClick:()=>click(i),'aria-label':sqn(i)+(g.s.b[i]?' '+g.s.b[i]:''),className:'relative',style:{background:isSel?'#F6E05E':isLast?(dark?'#BBCB2B':'#F5F682'):kingChk===i?'radial-gradient(circle,#FF4D4D,#FF4D4D80 55%,transparent 80%),'+(dark?'#769656':'#EEEED2'):(dark?'#769656':'#EEEED2')}},
+      c===0&&h('span',{className:'absolute left-0.5 top-0 text-[9px] font-bold',style:{color:dark?'#EEEED2':'#769656'}},8-r),r===7&&h('span',{className:'absolute bottom-0 right-0.5 text-[9px] font-bold',style:{color:dark?'#EEEED2':'#769656'}},'abcdefgh'[c]),
+      dm&&(cap?h('span',{className:'absolute inset-[6%] rounded-full',style:{boxShadow:'inset 0 0 0 4px rgba(20,85,30,.55)'}}):h('span',{className:'absolute left-1/2 top-1/2 h-[28%] w-[28%] -translate-x-1/2 -translate-y-1/2 rounded-full',style:{background:'rgba(20,85,30,.5)'}})));})),
+   ...g.s.b.map((p,i)=>p&&h('div',{key:p+i+(g.last&&g.last.to===i?'m':''),className:'pointer-events-none absolute grid place-items-center',style:{width:'12.5%',height:'12.5%',left:(i&7)*12.5+'%',top:(i>>3)*12.5+'%'}},h(Piece,{p,z:'92%'}))))),
+  bar('w','You · White'),
+  d('min-h-[2.4rem] text-center text-sm font-semibold text-white/90',g.msg),
+  d('flex items-center justify-between',h('button',{onClick:()=>setRules(true),className:'rounded-xl bg-white/10 px-4 py-2 text-sm font-bold'},'Rules'),
+   h('button',{onClick:resign,disabled:!!g.over||g.s.turn!=='w',className:'rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-40 '+(conf?'bg-[#DC2626]':'bg-white/10')},conf?'Tap again to resign':'Resign')),
+  g.promo&&d('fixed inset-0 z-30 grid place-items-center bg-black/70 p-5',d('pop rounded-3xl bg-[#FFFBF0] p-5 text-center text-[#12231B]',d('mb-3 text-lg font-extrabold','Promote pawn to…'),
+   d('flex gap-2',...['q','r','b','n'].map(q=>h('button',{key:q,onClick:()=>commit(g.promo.cand.find(m=>m.promo===q),'w'),className:'grid h-16 w-16 place-items-center rounded-2xl bg-[#769656] active:scale-95','aria-label':'Promote to '+q},h(Piece,{p:'w'+q,z:48})))))),
+  g.over&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('text-5xl mt-1',g.over.w==='w'?'🏆':g.over.w==='draw'?'🤝':'😬'),
+    d('text-2xl font-extrabold',g.over.w==='w'?'Checkmate — you win!':g.over.w==='draw'?'Draw':'AI wins'),d('text-sm text-[#5C7467]',g.over.reason)),
+   g.over.w!=='draw'&&d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[g.over.w==='w'?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'?'text-[#7E9488]':x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(g.before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>setG(null),className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))),
+  rules&&Rules(()=>setRules(false)));
+}
+function Rules(close){return d('fixed inset-0 z-40 flex items-end justify-center bg-black/60',d('up max-h-[85%] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5 text-left text-[#12231B]',
+ d('mb-2 flex items-center justify-between',d('text-lg font-extrabold','How to play'),h('button',{onClick:close,className:'h-8 w-8 rounded-full bg-[#EAF3ED] font-bold','aria-label':'Close'},'✕')),
+ d('space-y-2 text-sm',...[['Moving','You are White (bottom) and move first. Tap a piece to see its legal moves: dots are moves, rings are captures.'],['Special moves','Castling, en passant and pawn promotion are all supported. Promotion lets you choose the piece.'],['Check','You can never leave your own king in check. A red glow marks a king in check.'],['Winning','Checkmate your rival to take the pot. Stalemate, insufficient material or 50 moves without a capture or pawn move is a draw: both stakes are refunded with no fee.'],['Resigning','Tap Resign twice to concede the match.'],['Payout','Winner gets 95% of the pool; 5% is the platform fee. The ledger and your wallet update the moment the game ends.']].map(r=>d('',h('b',null,r[0]+': '),r[1])))));}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

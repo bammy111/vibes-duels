@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Archery – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useRef,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const ARW=340,ARH=520,ARBX=170,ARBY=262,ARK=3.0,ARTR=88,ARFL=14;
+const arGauss=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random());
+const arScore=d=>d<=14?10:d<=32?8:d<=50?6:d<=69?4:d<=88?2:0;
+const arTgtY=(t,ph)=>250+70*Math.sin(t/1000*.9+ph);
+const arWind=()=>{const sp=Math.floor(Math.random()*10);return Math.random()<.5?-sp:sp;};
+const arWindTxt=w=>w===0?'Wind: calm (0 mph)':'Wind: '+Math.abs(w)+' mph '+(w<0?'◀ Left':'Right ▶');
+function ArcheryGame({stake,pool,payout,onEnd}){
+ const cv=useRef(),endRef=useRef();endRef.current=onEnd;
+ const G=useRef(null);
+ if(!G.current)G.current={ph:Math.random()*6.28,wind:arWind(),idx:0,turn:0,phase:'aim',draw:null,fly:null,arrows:[],miss:[],sc:[0,0],list:[[],[]],flash:null,over:false,ai:false,aiPlan:null,api:{}};
+ const [ui,setUi]=useState({turn:0,wind:G.current.wind,round:1,sc:[0,0],list:[[],[]],msg:'Round 1 — hold anywhere to draw your bow, drag to aim, release to shoot!',over:false,tick:0});
+ useEffect(()=>{
+  const g=G.current,c=cv.current,ctx=c.getContext('2d');ctx.scale(2,2);
+  const sync=m=>setUi(u=>({turn:g.turn,wind:g.wind,round:Math.min(3,Math.floor(g.idx/6)+1),sc:[...g.sc],list:[[...g.list[0]],[...g.list[1]]],msg:m||u.msg,over:g.over,tick:u.tick+1}));
+  const flash=(t,col)=>{g.flash={t,col,life:60};};
+  g.api.tgtAt=t=>arTgtY(t,g.ph);
+  const hold=now=>g.draw?Math.max(0,(now-g.draw.t0)/1000):0;
+  const jit=(t,d)=>{const A=t<1.1?7-4.5*(t/1.1):t<2.6?2.5:Math.min(10,2.5+(t-2.6)*3.5);return[A*(Math.sin(t*7.3+d.p1)+.5*Math.sin(t*13.1+d.p2)),A*(Math.cos(t*6.1+d.p2)+.5*Math.cos(t*11.7+d.p1))];};
+  const reticle=now=>{const d=g.draw;if(!d)return null;const t=hold(now),[jx,jy]=jit(t,d);return[Math.max(10,Math.min(ARW-10,ARBX+(d.cx-d.sx)+jx)),Math.max(20,Math.min(ARH-80,ARBY+(d.cy-d.sy)+jy))];};
+  const shoot=(who,ix,iy,now)=>{g.fly={who,x:ix,y:iy,f:0,t0:now};g.phase='fly';g.draw=null;};
+  const land=(now)=>{const f=g.fly,cy=arTgtY(now,g.ph),dx=f.x-ARBX,dy=f.y-cy,dist=Math.hypot(dx,dy),pts=arScore(dist),who=f.who;g.fly=null;
+   if(pts>0)g.arrows.push({who,ox:dx,oy:dy,pts});else g.miss.push({who,x:f.x,y:f.y,life:90});
+   g.sc[who]+=pts;g.list[who].push(pts);flash(pts===10?'BULLSEYE! +10':pts?'+'+pts:'MISS',pts===10?'#FFC83D':pts>=6?'#4ADE80':pts?'#fff':'#FCA5A5');
+   g.phase='resolve';const nm=who?'Chidi O.':'You';sync(nm+(pts?' scored '+pts+(pts===10?' — bullseye!':'.'):' missed the target.'));
+   setTimeout(()=>{if(g.over)return;g.idx++;
+    if(g.idx>=18){g.over=true;g.phase='done';const w=g.sc[0]>g.sc[1]?1:g.sc[1]>g.sc[0]?2:0;sync(w===1?'You win '+g.sc[0]+'–'+g.sc[1]+'!':w===2?'Chidi O. wins '+g.sc[1]+'–'+g.sc[0]+'.':'Tie '+g.sc[0]+'–'+g.sc[1]+' — stakes refunded.');setTimeout(()=>endRef.current(w),2500);return;}
+    let msg='';if(g.idx%6===0){g.arrows=[];g.miss=[];msg='Round '+(g.idx/6+1)+' begins. ';}
+    g.turn=g.idx%2;g.wind=arWind();g.phase=g.turn===0?'aim':'ai';g.ai=false;
+    sync(msg+(g.turn===0?'Your arrow — mind the wind!':"Chidi O.'s arrow…"));},1000);};
+  const aiShoot=(now0)=>{if(g.over||g.turn!==1||g.phase!=='ai')return;const hold0=now0;g.aiPlan={t0:hold0,fire:hold0+1150+Math.random()*350,ex:arGauss()*16,ey:arGauss()*18,wk:1+arGauss()*.25};};
+  const draw=(now)=>{
+   const sk=ctx.createLinearGradient(0,0,0,ARH);sk.addColorStop(0,'#6EC1F5');sk.addColorStop(.62,'#CDEBFB');sk.addColorStop(1,'#E9F7FF');ctx.fillStyle=sk;ctx.fillRect(0,0,ARW,ARH);
+   ctx.fillStyle='#7BC96F';ctx.beginPath();ctx.moveTo(0,430);ctx.quadraticCurveTo(170,380,340,430);ctx.lineTo(340,ARH);ctx.lineTo(0,ARH);ctx.fill();ctx.fillStyle='#5BAF52';ctx.beginPath();ctx.moveTo(0,470);ctx.quadraticCurveTo(170,430,340,470);ctx.lineTo(340,ARH);ctx.lineTo(0,ARH);ctx.fill();
+   const cy=arTgtY(now,g.ph);
+   ctx.fillStyle='#6B7280';ctx.fillRect(163,120,14,300);ctx.fillStyle='#4B5563';ctx.fillRect(163,120,14,4);ctx.fillRect(163,416,14,4);
+   ctx.fillStyle='rgba(0,0,0,.18)';ctx.beginPath();ctx.ellipse(ARBX+6,cy+ARTR+10,ARTR*.9,10,0,0,7);ctx.fill();
+   [[88,'#F8FAFC'],[69,'#1F2937'],[50,'#2563EB'],[32,'#DC2626'],[14,'#FACC15']].forEach(([r,col])=>{ctx.beginPath();ctx.arc(ARBX,cy,r,0,7);ctx.fillStyle=col;ctx.fill();ctx.strokeStyle='rgba(0,0,0,.35)';ctx.lineWidth=1;ctx.stroke();});
+   ctx.strokeStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.arc(ARBX,cy,ARTR+3,0,7);ctx.lineWidth=5;ctx.stroke();
+   ctx.fillStyle='#111827';ctx.font='bold 9px sans-serif';ctx.textAlign='center';[[88,'2'],[69,'4'],[50,'6'],[32,'8'],[14,'10']].forEach(([r,t])=>{ctx.fillStyle=r===69||r===50||r===32?'#fff':'#111827';ctx.fillText(t,ARBX,cy-r+9);});
+   g.miss=g.miss.filter(m=>m.life>0);g.miss.forEach(m=>{m.life--;ctx.globalAlpha=Math.min(1,m.life/30);const col=m.who?'#2563EB':'#B45309';ctx.strokeStyle=col;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(m.x,m.y);ctx.lineTo(m.x+3,m.y+16);ctx.stroke();ctx.globalAlpha=1;});
+   g.arrows.forEach(a=>{const x=ARBX+a.ox,y=cy+a.oy,col=a.who?'#60A5FA':'#FFC83D';ctx.strokeStyle='#111827';ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(x,y,3.4,0,7);ctx.fillStyle=col;ctx.fill();ctx.stroke();ctx.strokeStyle=col;ctx.lineWidth=2;for(let k=0;k<3;k++){const ang=k*2.1+.6;ctx.beginPath();ctx.moveTo(x+Math.cos(ang)*3.4,y+Math.sin(ang)*3.4);ctx.lineTo(x+Math.cos(ang)*9,y+Math.sin(ang)*9);ctx.stroke();}});
+   const w=g.wind;ctx.fillStyle='rgba(18,35,27,.82)';ctx.beginPath();ctx.roundRect?ctx.roundRect(70,10,200,30,15):ctx.rect(70,10,200,30);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillText(arWindTxt(w),ARBX+8,30);
+   ctx.strokeStyle='#4B5563';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(30,150);ctx.lineTo(30,60);ctx.stroke();ctx.fillStyle='#EF4444';const sway=Math.sin(now/150)*3,fl=14+Math.abs(w)*3.2,dir=w<0?-1:1;ctx.beginPath();ctx.moveTo(30,62);ctx.lineTo(30+dir*fl,66+sway);ctx.lineTo(30+dir*fl*.9,78+sway);ctx.lineTo(30,80);ctx.closePath();ctx.fill();
+   const mine=g.turn===0&&g.phase==='aim',rt=reticle(now),p=g.draw?Math.min(1,hold(now)/1.1):(g.aiPlan&&g.phase==='ai'?Math.min(1,(now-g.aiPlan.t0)/1100):0);
+   const pull=p*34;ctx.strokeStyle='#7C4A1D';ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.arc(ARBX,508,58,Math.PI*1.12,Math.PI*1.88);ctx.stroke();
+   const lx=ARBX-58*Math.cos(Math.PI*.12),ly=508-58*Math.sin(Math.PI*.12),rx=ARBX+58*Math.cos(Math.PI*.12);ctx.strokeStyle='#E5E7EB';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(ARBX,ly+8+pull);ctx.lineTo(rx,ly);ctx.stroke();
+   if(g.phase!=='fly'&&(g.phase==='aim'||g.phase==='ai')){ctx.strokeStyle=g.turn?'#60A5FA':'#FFC83D';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(ARBX,ly+8+pull);ctx.lineTo(ARBX,ly-52+pull);ctx.stroke();ctx.fillStyle='#9CA3AF';ctx.beginPath();ctx.moveTo(ARBX-4,ly-52+pull);ctx.lineTo(ARBX+4,ly-52+pull);ctx.lineTo(ARBX,ly-62+pull);ctx.fill();}
+   if(mine&&rt){ctx.strokeStyle='rgba(239,68,68,.95)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(rt[0],rt[1],11,0,7);ctx.moveTo(rt[0]-18,rt[1]);ctx.lineTo(rt[0]-5,rt[1]);ctx.moveTo(rt[0]+5,rt[1]);ctx.lineTo(rt[0]+18,rt[1]);ctx.moveTo(rt[0],rt[1]-18);ctx.lineTo(rt[0],rt[1]-5);ctx.moveTo(rt[0],rt[1]+5);ctx.lineTo(rt[0],rt[1]+18);ctx.stroke();
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(12,ARH-30-160,9,160);ctx.fillStyle=p>=1?'#4ADE80':'#FFC83D';ctx.fillRect(12,ARH-30-160*p,9,160*p);ctx.fillStyle='#fff';ctx.font='bold 9px sans-serif';ctx.textAlign='left';ctx.fillText(p>=1?'FULL':Math.round(p*100)+'%',6,ARH-14);}
+   if(g.fly){const f=g.fly,t=Math.min(1,f.f/ARFL),e=1-(1-t)*(1-t),x=ARBX+(f.x-ARBX)*e,y=480+(f.y-480)*e,s=1.5-.6*e;ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.strokeStyle=f.who?'#60A5FA':'#FFC83D';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,18);ctx.stroke();ctx.fillStyle='#374151';ctx.beginPath();ctx.moveTo(-3,0);ctx.lineTo(3,0);ctx.lineTo(0,-8);ctx.fill();ctx.restore();}
+   if(g.flash&&g.flash.life>0){const f=g.flash;ctx.globalAlpha=Math.min(1,f.life/18);ctx.fillStyle=f.col;ctx.font='800 26px sans-serif';ctx.textAlign='center';ctx.strokeStyle='rgba(0,0,0,.6)';ctx.lineWidth=4;ctx.strokeText(f.t,ARBX,90);ctx.fillText(f.t,ARBX,90);ctx.globalAlpha=1;f.life--;}};
+  let raf,last=performance.now(),acc=0;
+  const loop=now=>{acc+=Math.min(now-last,100);last=now;
+   while(acc>=16.67){acc-=16.67;if(g.phase==='fly'){g.fly.f++;if(g.fly.f>=ARFL)land(now);}}
+   if(g.phase==='ai'&&!g.ai&&!g.over){g.ai=true;setTimeout(()=>aiShoot(performance.now()),900);}
+   if(g.phase==='ai'&&g.aiPlan&&now>=g.aiPlan.fire&&!g.fly){const pl=g.aiPlan;g.aiPlan=null;const arrive=now+ARFL*16.67,ty=arTgtY(arrive,g.ph),ix=ARBX-g.wind*ARK*pl.wk+pl.ex+g.wind*ARK,iy=ty+pl.ey;shoot(1,ix,iy,now);}
+   draw(now);raf=requestAnimationFrame(loop);};
+  raf=requestAnimationFrame(loop);
+  const pos=e=>{const r=c.getBoundingClientRect();return[(e.clientX-r.left)*ARW/r.width,(e.clientY-r.top)*ARH/r.height];};
+  c.onpointerdown=e=>{if(g.phase!=='aim'||g.over)return;c.setPointerCapture(e.pointerId);const[x,y]=pos(e);g.draw={t0:performance.now(),sx:x,sy:y,cx:x,cy:y,p1:Math.random()*6.3,p2:Math.random()*6.3};};
+  c.onpointermove=e=>{if(!g.draw)return;const[x,y]=pos(e);g.draw.cx=x;g.draw.cy=y;};
+  c.onpointerup=e=>{const d=g.draw;if(!d||g.phase!=='aim'||g.over){g.draw=null;return;}const now=performance.now();const[x,y]=pos(e);d.cx=x;d.cy=y;const rt=reticle(now),t=hold(now),p=Math.min(1,t/1.1);
+   shoot(0,rt[0]+g.wind*ARK,rt[1]+(1-p)*50,now);};
+  c.onpointercancel=()=>{g.draw=null;};
+  return()=>cancelAnimationFrame(raf);
+ },[]);
+ const card=(p,name,col)=>d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(ui.turn===p&&!ui.over?'ring-2 ring-[#FFC83D]':'opacity-80'),
+  d('flex items-center justify-between',d('flex items-center gap-1.5 text-sm font-extrabold',h('span',{className:'inline-block h-3 w-3 rounded-full border',style:{background:col,borderColor:'rgba(255,255,255,.6)'}}),name),d('text-2xl font-extrabold tabular-nums',ui.sc[p])),
+  d('mt-0.5 flex min-h-[16px] flex-wrap gap-1',...ui.list[p].slice(-9).map((v,i)=>h('span',{key:i,className:'rounded px-1 text-[10px] font-extrabold',style:{background:v===10?'#FACC15':v>=6?'#4ADE80':v?'#E5E7EB':'#F87171',color:'#111827'}},v))));
+ return d('p-3 space-y-2',
+  d('flex items-center justify-between gap-2 rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center gap-1.5 text-sm font-extrabold','🔒 Escrow '+money(pool)),d('text-right text-[10px] leading-tight text-white/70',d('','Stake '+money(stake)+' each'),d('text-xs font-extrabold text-[#FFC83D]','Winner gets '+money(payout)))),
+  d('flex items-center gap-2',card(0,'You','#FFC83D'),d('text-center leading-tight',d('text-[10px] font-extrabold text-[#5C7467]','ROUND'),d('text-lg font-extrabold text-[#12231B]',ui.round+'/3')),card(1,'Chidi O.','#60A5FA')),
+  d('relative',h('canvas',{ref:cv,width:ARW*2,height:ARH*2,style:{width:'100%',height:'auto',touchAction:'none',borderRadius:20,display:'block'},'aria-label':'Archery range'}),
+   ui.turn===0&&!ui.over&&d('pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-3 py-1 text-[11px] font-bold text-white','Hold to draw · drag to aim · release'),
+   ui.over&&d('pop absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-black/70',d('px-6 text-center text-xl font-extrabold text-white',ui.msg))),
+  d('text-center text-sm font-semibold text-white',ui.msg));
+}
+
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),Lg=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[scr,setScr]=useState('start'),[res,setRes]=useState(null),[before,setBefore]=useState(0),[rules,setRules]=useState(false);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake;
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBefore(bal);setBal(b=>b-stake);setLed(l=>[Lg(m,'AI stake locked in escrow',stake,'opp'),Lg(m,'Your stake locked in escrow',-stake,'lock'),...l]);setRes(null);setScr('game');};
+ const done=w=>{const m=mid;
+  if(w===0){setBal(b=>b+stake);setLed(l=>[Lg(m,'AI stake refunded',stake,'opp'),Lg(m,'Your stake refunded (no fee)',stake,'release'),Lg(m,'Match drawn · equal scores',0,'info'),...l]);setRes(0);return;}
+  if(w===1){setBal(b=>b+payout);setLed(l=>[Lg(m,'Payout credited to your wallet',payout,'release'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match won · escrow pool '+money(pool),0,'info'),...l]);}
+  else setLed(l=>[Lg(m,'Payout released to AI',payout,'opp'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match lost · escrow pool '+money(pool),0,'info'),...l]);
+  setRes(w);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-2 px-2 pb-4 pt-3 relative',...k);
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-5 px-3 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','ARCHERY'),d('text-sm text-white/80','Hold to draw, drag to aim, fight the wind and the moving target — 3 rounds, 3 arrows each. Highest total takes the pot.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play')));
+ const mine=led.filter(x=>x.mid===mid).reverse();
+ return shell(
+  d('rounded-[28px] bg-[#F2F6F3] text-[#12231B]',h(ArcheryGame,{key:mid,stake,pool,payout,onEnd:done})),
+  res!==null&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('mt-1 text-5xl',res===1?'🏆':res===0?'🤝':'😬'),d('text-2xl font-extrabold',res===1?'You out-shot Chidi O.!':res===0?'Full grid':'Chidi O. wins'),d('text-sm text-[#5C7467]',res===1?'Winner takes the escrow pool':res===0?'Equal scores — stakes refunded':'Chidi O. scored higher')),
+   res===0?d('mt-3 rounded-2xl bg-[#EAF3ED] p-4 text-sm font-semibold','Both stakes refunded — '+money(stake)+' back to each player. No platform fee.'):d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[res===1?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'||x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>{setScr('start');setRes(null);},className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

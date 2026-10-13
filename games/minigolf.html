@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mini Golf – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useRef,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const MGW=340,MGH=560,MGR=6.5,MGHX=170,MGHY=96,MGHR=10,MGMAXV=13,MGB={x:20,y:40,w:300,h:480};
+const MGWALLS=[{x:20,y:372,w:112,h:16},{x:208,y:262,w:112,h:16},{x:150,y:306,w:40,h:16},{x:20,y:170,w:104,h:16}];
+const MGSAND=[{t:'r',x:206,y:420,w:100,h:62},{t:'c',x:92,y:300,r:30},{t:'c',x:240,y:150,r:26}];
+const mgSand=(x,y)=>MGSAND.some(s=>s.t==='r'?(x>=s.x&&x<=s.x+s.w&&y>=s.y&&y<=s.y+s.h):Math.hypot(x-s.x,y-s.y)<s.r);
+const mgGauss=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random());
+function mgStep(b){const sub=3;
+ for(let s=0;s<sub;s++){b.x+=b.vx/sub;b.y+=b.vy/sub;
+  if(b.x<MGB.x+MGR){b.x=MGB.x+MGR;b.vx=Math.abs(b.vx)*.78;}if(b.x>MGB.x+MGB.w-MGR){b.x=MGB.x+MGB.w-MGR;b.vx=-Math.abs(b.vx)*.78;}
+  if(b.y<MGB.y+MGR){b.y=MGB.y+MGR;b.vy=Math.abs(b.vy)*.78;}if(b.y>MGB.y+MGB.h-MGR){b.y=MGB.y+MGB.h-MGR;b.vy=-Math.abs(b.vy)*.78;}
+  for(const w of MGWALLS){const cx=Math.max(w.x,Math.min(b.x,w.x+w.w)),cy=Math.max(w.y,Math.min(b.y,w.y+w.h)),dx=b.x-cx,dy=b.y-cy,d=Math.hypot(dx,dy);
+   if(d<MGR){if(d===0){b.y=w.y-MGR;b.vy=-Math.abs(b.vy)*.78;}else{const nx=dx/d,ny=dy/d;b.x=cx+nx*MGR;b.y=cy+ny*MGR;const vn=b.vx*nx+b.vy*ny;if(vn<0){b.vx-=1.78*vn*nx;b.vy-=1.78*vn*ny;}}}}
+  const hd=Math.hypot(b.x-MGHX,b.y-MGHY),sp=Math.hypot(b.vx,b.vy);
+  if(hd<MGHR&&sp<6.5)return 1;
+  if(hd<MGHR+7&&sp<4){b.vx+=(MGHX-b.x)*.012;b.vy+=(MGHY-b.y)*.012;}}
+ const f=mgSand(b.x,b.y)?.9:.975;b.vx*=f;b.vy*=f;if(Math.hypot(b.vx,b.vy)<.07)b.vx=b.vy=0;return 0;}
+function mgSim(b0,vx,vy){const b={x:b0.x,y:b0.y,vx,vy};for(let i=0;i<700;i++){if(mgStep(b)===1)return{sunk:true,f:i,x:MGHX,y:MGHY};if(!b.vx&&!b.vy)return{sunk:false,f:i,x:b.x,y:b.y};}return{sunk:false,f:700,x:b.x,y:b.y};}
+const mgScore=r=>r.sunk?1000-r.f*.1:-Math.hypot(r.x-MGHX,r.y-MGHY)-(mgSand(r.x,r.y)?18:0);
+function mgPlan(b){const c=[];
+ for(let a=0;a<72;a++){const ang=a*Math.PI/36;for(const p of[.3,.42,.55,.68,.82,1]){const v=1.2+p*11.5;c.push({ang,p,sc:mgScore(mgSim(b,Math.cos(ang)*v,Math.sin(ang)*v))});}}
+ c.sort((x,y)=>y.sc-x.sc);let best=null;
+ for(const k of c.slice(0,10)){let m=0;for(let i=0;i<6;i++){const ang=k.ang+mgGauss()*.03,p=Math.max(.15,Math.min(1,k.p*(1+mgGauss()*.05))),v=1.2+p*11.5;m+=mgScore(mgSim(b,Math.cos(ang)*v,Math.sin(ang)*v));}m/=6;if(!best||m>best.m)best={ang:k.ang,p:k.p,m};}
+ return best;}
+function MiniGolfGame({stake,pool,payout,onEnd}){
+ const cv=useRef(),endRef=useRef(),potRef=useRef();endRef.current=onEnd;
+ const G=useRef(null);
+ if(!G.current)G.current={balls:[{x:170,y:486,vx:0,vy:0,sunk:false,sinking:0},{x:170,y:486,vx:0,vy:0,sunk:false,sinking:0}],strokes:[0,0],holed:[null,null],turn:0,phase:'aim',drag:null,aimAI:null,flash:null,over:false,ai:false,pot:0};
+ const [ui,setUi]=useState({turn:0,msg:'Your putt — drag back from your ball, then release.',over:false,strokes:[0,0],holed:[null,null],tick:0});
+ useEffect(()=>{
+  const g=G.current,c=cv.current,ctx=c.getContext('2d');ctx.scale(2,2);
+  const sync=m=>setUi(u=>({turn:g.turn,msg:m||u.msg,over:g.over,strokes:[...g.strokes],holed:[...g.holed],tick:u.tick+1}));
+  const flash=(t,col)=>{g.flash={t,col,life:70};};
+  const decide=()=>{const h=g.holed;
+   if(h[0]!==null&&h[1]!==null)return h[0]<h[1]?1:h[0]>h[1]?2:0;
+   const a=h[0]!==null?0:h[1]!==null?1:null;if(a!==null){const o=1-a;if(g.strokes[o]>=h[a])return a===0?1:2;}
+   return null;};
+  const finish=(w)=>{g.over=true;g.phase='done';const t=g.holed.map((x,i)=>x>10?'X':x);
+   const msg=w===0?'Dead heat! Both took '+g.holed[0]+' strokes — stakes refunded.':w===1?'You win! '+(g.holed[0]>10?'X':g.holed[0])+' strokes to '+(g.holed[1]===null?'—':g.holed[1]>10?'X':g.holed[1])+'.':'Chidi O. wins with '+g.holed[1]+' strokes'+(g.holed[0]===null?'.':' to your '+(g.holed[0]>10?'X':g.holed[0])+'.');
+   sync(msg);setTimeout(()=>endRef.current(w),2500);};
+  const settle=()=>{const p=g.turn,b=g.balls[p];
+   if(b.sunk&&g.holed[p]===null){g.holed[p]=g.strokes[p];flash(g.strokes[p]===1?'HOLE IN ONE!':'IN THE HOLE!','#4ADE80');}
+   else if(!b.sunk&&g.strokes[p]>=10){g.holed[p]=11;b.sunk=true;flash('Ball picked up — 10 stroke limit','#FCA5A5');}
+   const w=decide();if(w!==null){finish(w);return;}
+   const o=1-p;g.turn=g.holed[o]===null?o:p;g.phase=g.turn===0?'aim':'ai';g.ai=false;
+   const who=p?'Chidi O.':'You';
+   sync(g.turn===0?(g.holed[1]!==null?'Chidi O. is in with '+g.holed[1]+'. Beat it! Your putt.':'Your putt — drag back from your ball, then release.'):(g.holed[0]!==null?'You are in with '+g.holed[0]+'. Chidi O. putts…':"Chidi O.'s putt…"));};
+  const putt=(ang,pw)=>{const p=g.turn,b=g.balls[p],v=1.2+pw*11.5;b.vx=Math.cos(ang)*v;b.vy=Math.sin(ang)*v;g.strokes[p]++;g.phase='roll';g.drag=null;g.aimAI=null;sync((p?'Chidi O.':'You')+' — stroke '+g.strokes[p]);};
+  const aiPlay=()=>{if(g.over||g.turn!==1||g.phase!=='ai')return;const b=g.balls[1],pl=mgPlan(b);const ang=pl.ang+mgGauss()*.07,pw=Math.max(.15,Math.min(1,pl.p*(1+mgGauss()*.11)));g.aimAI={ang,pw};
+   setTimeout(()=>{if(g.over||g.phase!=='ai')return;putt(ang,pw);},800);};
+  const arrow=(b,ang,pw,col)=>{const len=26+pw*96,ex=b.x+Math.cos(ang)*len,ey=b.y+Math.sin(ang)*len;
+   ctx.strokeStyle=col;ctx.lineWidth=3;ctx.lineCap='round';ctx.setLineDash([2,7]);ctx.beginPath();ctx.moveTo(b.x+Math.cos(ang)*12,b.y+Math.sin(ang)*12);ctx.lineTo(ex,ey);ctx.stroke();ctx.setLineDash([]);
+   ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(ex+Math.cos(ang)*9,ey+Math.sin(ang)*9);ctx.lineTo(ex+Math.cos(ang+2.4)*9,ey+Math.sin(ang+2.4)*9);ctx.lineTo(ex+Math.cos(ang-2.4)*9,ey+Math.sin(ang-2.4)*9);ctx.closePath();ctx.fill();};
+  const draw=(now)=>{
+   ctx.fillStyle='#0F3D24';ctx.fillRect(0,0,MGW,MGH);ctx.fillStyle='#14532D';ctx.fillRect(MGB.x-8,MGB.y-8,MGB.w+16,MGB.h+16);
+   for(let y=0;y<MGB.h;y+=24){ctx.fillStyle=(y/24)%2?'#2F9E55':'#37AD5F';ctx.fillRect(MGB.x,MGB.y+y,MGB.w,24);}
+   ctx.fillStyle='#1F7A43';ctx.beginPath();ctx.roundRect?ctx.roundRect(148,468,44,36,6):ctx.rect(148,468,44,36);ctx.fill();ctx.fillStyle='rgba(255,255,255,.5)';ctx.font='bold 8px sans-serif';ctx.textAlign='center';ctx.fillText('TEE',170,512);
+   MGSAND.forEach(s=>{ctx.fillStyle='#E7D3A1';ctx.strokeStyle='#C9B27A';ctx.lineWidth=2;ctx.beginPath();if(s.t==='r'){ctx.rect(s.x,s.y,s.w,s.h);}else ctx.arc(s.x,s.y,s.r,0,7);ctx.fill();ctx.stroke();
+    ctx.fillStyle='rgba(120,90,40,.35)';for(let i=0;i<14;i++){const a=i*2.4,rr=(s.t==='r'?18:s.r*.6)*((i%5)/5+.3);const px=s.t==='r'?s.x+s.w/2+Math.cos(a)*rr*2:s.x+Math.cos(a)*rr,py=s.t==='r'?s.y+s.h/2+Math.sin(a)*rr:s.y+Math.sin(a)*rr;ctx.fillRect(px,py,2,2);}});
+   MGWALLS.forEach(w=>{ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(w.x+3,w.y+4,w.w,w.h);ctx.fillStyle='#7C4A1D';ctx.fillRect(w.x,w.y,w.w,w.h);ctx.fillStyle='#A66A2D';ctx.fillRect(w.x,w.y,w.w,4);ctx.strokeStyle='#4A2A0E';ctx.lineWidth=1.5;ctx.strokeRect(w.x,w.y,w.w,w.h);});
+   ctx.strokeStyle='#6B4423';ctx.lineWidth=8;ctx.strokeRect(MGB.x-4,MGB.y-4,MGB.w+8,MGB.h+8);ctx.strokeStyle='#A66A2D';ctx.lineWidth=2;ctx.strokeRect(MGB.x-8,MGB.y-8,MGB.w+16,MGB.h+16);
+   ctx.beginPath();ctx.arc(MGHX,MGHY,MGHR+2,0,7);ctx.fillStyle='#1b4d2e';ctx.fill();ctx.beginPath();ctx.arc(MGHX,MGHY,MGHR,0,7);ctx.fillStyle='#050805';ctx.fill();
+   [1,0].forEach(i=>{const b=g.balls[i];if(b.sunk)return;const sc=b.sinking?Math.max(.1,1-b.sinking/14):1;
+    ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.ellipse(b.x+1.5,b.y+2.5,MGR*sc,MGR*.7*sc,0,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc(b.x,b.y,MGR*sc,0,7);ctx.fillStyle=i?'#60A5FA':'#FFFFFF';ctx.fill();ctx.strokeStyle=i?'#1E3A8A':'#9CA3AF';ctx.lineWidth=1.2;ctx.stroke();
+    if(g.turn===i&&(g.phase==='aim'||g.phase==='ai')&&!g.over){ctx.strokeStyle='rgba(255,200,61,.95)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(b.x,b.y,MGR+4+Math.sin(now/180)*1.5,0,7);ctx.stroke();}});
+   const t=now/300;ctx.strokeStyle='#E5E7EB';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(MGHX,MGHY);ctx.lineTo(MGHX,MGHY-46);ctx.stroke();
+   ctx.fillStyle='#EF4444';ctx.beginPath();ctx.moveTo(MGHX,MGHY-46);ctx.lineTo(MGHX+24+Math.sin(t)*2.5,MGHY-39+Math.cos(t)*1.5);ctx.lineTo(MGHX,MGHY-31);ctx.closePath();ctx.fill();ctx.strokeStyle='#7F1D1D';ctx.lineWidth=1;ctx.stroke();
+   if(g.phase==='aim'&&g.drag&&!g.over){const b=g.balls[0],px=g.drag.cx-b.x,py=g.drag.cy-b.y,l=Math.hypot(px,py);if(l>8){const pw=Math.min(l/130,1),ang=Math.atan2(-py,-px);arrow(b,ang,pw,'rgba(255,255,255,.95)');
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(12,MGH-30-170,10,170);ctx.fillStyle=pw>.8?'#F87171':pw>.5?'#FFC83D':'#4ADE80';ctx.fillRect(12,MGH-30-170*pw,10,170*pw);ctx.fillStyle='#fff';ctx.font='bold 9px sans-serif';ctx.textAlign='left';ctx.fillText(Math.round(pw*100)+'%',8,MGH-14);}}
+   if(g.phase==='ai'&&g.aimAI)arrow(g.balls[1],g.aimAI.ang,g.aimAI.pw,'rgba(147,197,253,.95)');
+   if(g.flash&&g.flash.life>0){const f=g.flash;ctx.globalAlpha=Math.min(1,f.life/20);ctx.fillStyle=f.col;ctx.font='800 24px sans-serif';ctx.textAlign='center';ctx.strokeStyle='rgba(0,0,0,.6)';ctx.lineWidth=4;ctx.strokeText(f.t,MGW/2,MGH/2);ctx.fillText(f.t,MGW/2,MGH/2);ctx.globalAlpha=1;f.life--;}};
+  let raf,last=performance.now(),acc=0;
+  const loop=now=>{acc+=Math.min(now-last,100);last=now;
+   while(acc>=16.67){acc-=16.67;
+    if(g.phase==='roll'){const b=g.balls[g.turn];
+     if(b.sinking){b.sinking++;b.x+=(MGHX-b.x)*.3;b.y+=(MGHY-b.y)*.3;if(b.sinking>=14){b.sunk=true;b.sinking=0;settle();}}
+     else{const r=mgStep(b);if(r===1){b.sinking=1;b.vx=b.vy=0;}else if(!b.vx&&!b.vy)settle();}}}
+   if(g.pot<pool){g.pot=Math.min(pool,g.pot+pool/50);if(potRef.current)potRef.current.textContent=money(g.pot);}
+   if(g.phase==='ai'&&!g.ai&&!g.over){g.ai=true;setTimeout(aiPlay,900);}
+   draw(now);raf=requestAnimationFrame(loop);};
+  raf=requestAnimationFrame(loop);
+  const pos=e=>{const r=c.getBoundingClientRect();return[(e.clientX-r.left)*MGW/r.width,(e.clientY-r.top)*MGH/r.height];};
+  c.onpointerdown=e=>{if(g.phase!=='aim'||g.over)return;const[x,y]=pos(e),b=g.balls[0];if(Math.hypot(x-b.x,y-b.y)>64)return;c.setPointerCapture(e.pointerId);g.drag={cx:x,cy:y};};
+  c.onpointermove=e=>{if(!g.drag)return;const[x,y]=pos(e);g.drag.cx=x;g.drag.cy=y;};
+  c.onpointerup=()=>{const d=g.drag;g.drag=null;if(!d||g.phase!=='aim'||g.over)return;const b=g.balls[0],px=d.cx-b.x,py=d.cy-b.y,l=Math.hypot(px,py);if(l>10)putt(Math.atan2(-py,-px),Math.min(l/130,1));};
+  c.onpointercancel=()=>{g.drag=null;};
+  return()=>cancelAnimationFrame(raf);
+ },[]);
+ const sv=v=>v===null?'—':v>10?'X':v;
+ const card=(p,name,col)=>d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(ui.turn===p&&!ui.over?'ring-2 ring-[#FFC83D]':'opacity-75'),
+  d('flex items-center justify-between',d('flex items-center gap-1.5 text-sm font-extrabold',h('span',{className:'inline-block h-3 w-3 rounded-full border',style:{background:col,borderColor:'rgba(255,255,255,.6)'}}),name),ui.holed[p]!==null&&d('rounded-full bg-[#4ADE80] px-1.5 text-[10px] font-extrabold text-[#052e16]','IN')),
+  d('text-3xl font-extrabold leading-none tabular-nums',ui.strokes[p]),d('mt-0.5 text-[10px] text-white/60',ui.holed[p]!==null?'Holed in '+sv(ui.holed[p]):'strokes'));
+ return d('p-3 space-y-2',
+  d('flex items-center justify-between gap-2 rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center gap-2',h('span',{className:'text-lg'},'💰'),d('',d('text-[10px] font-bold uppercase tracking-wide text-white/60','Live wager pot'),h('span',{ref:potRef,className:'text-lg font-extrabold tabular-nums text-[#FFC83D]'},money(0)))),d('text-right text-[10px] leading-tight text-white/70',d('','Stake '+money(stake)+' each'),d('text-xs font-extrabold text-[#FFC83D]','Winner gets '+money(payout)))),
+  d('flex items-center gap-2',card(0,'You','#FFFFFF'),d('text-center text-[10px] font-extrabold text-[#5C7467]','VS'),card(1,'Chidi O.','#60A5FA')),
+  d('relative',h('canvas',{ref:cv,width:MGW*2,height:MGH*2,style:{width:'100%',height:'auto',touchAction:'none',borderRadius:20,display:'block'},'aria-label':'Mini golf hole'}),
+   ui.over&&d('pop absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-black/70',d('px-6 text-center text-xl font-extrabold text-white',ui.msg))),
+  d('text-center text-sm font-semibold text-white',ui.msg));
+}
+
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),Lg=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[scr,setScr]=useState('start'),[res,setRes]=useState(null),[before,setBefore]=useState(0),[rules,setRules]=useState(false);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake;
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBefore(bal);setBal(b=>b-stake);setLed(l=>[Lg(m,'AI stake locked in escrow',stake,'opp'),Lg(m,'Your stake locked in escrow',-stake,'lock'),...l]);setRes(null);setScr('game');};
+ const done=w=>{const m=mid;
+  if(w===0){setBal(b=>b+stake);setLed(l=>[Lg(m,'AI stake refunded',stake,'opp'),Lg(m,'Your stake refunded (no fee)',stake,'release'),Lg(m,'Match drawn · equal strokes',0,'info'),...l]);setRes(0);return;}
+  if(w===1){setBal(b=>b+payout);setLed(l=>[Lg(m,'Payout credited to your wallet',payout,'release'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match won · escrow pool '+money(pool),0,'info'),...l]);}
+  else setLed(l=>[Lg(m,'Payout released to AI',payout,'opp'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match lost · escrow pool '+money(pool),0,'info'),...l]);
+  setRes(w);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-2 px-2 pb-4 pt-3 relative',...k);
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-5 px-3 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','MINI GOLF'),d('text-sm text-white/80','One hole, sand traps and bouncy walls. Drag back, release, and sink it in the fewest strokes.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play')));
+ const mine=led.filter(x=>x.mid===mid).reverse();
+ return shell(
+  d('rounded-[28px] bg-[#F2F6F3] text-[#12231B]',h(MiniGolfGame,{key:mid,stake,pool,payout,onEnd:done})),
+  res!==null&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('mt-1 text-5xl',res===1?'🏆':res===0?'🤝':'😬'),d('text-2xl font-extrabold',res===1?'You win the hole!':res===0?'Dead heat':'Chidi O. wins'),d('text-sm text-[#5C7467]',res===1?'Winner takes the escrow pool':res===0?'Equal strokes — stakes refunded':'Chidi O. needed fewer strokes')),
+   res===0?d('mt-3 rounded-2xl bg-[#EAF3ED] p-4 text-sm font-semibold','Both stakes refunded — '+money(stake)+' back to each player. No platform fee.'):d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[res===1?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'||x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>{setScr('start');setRes(null);},className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

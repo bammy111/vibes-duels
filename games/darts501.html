@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Darts 501 – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#101A22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0A1118}}
+:root[data-theme="dark"]{--bg:#0A1118}
+html{scroll-padding-top:env(safe-area-inset-top,0px);min-height:100%}
+body{margin:0;min-height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+@keyframes pop{0%{transform:scale(.7);opacity:0}100%{transform:scale(1);opacity:1}}
+.pop{animation:pop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+.pc{transition:left .22s ease,top .22s ease}
+@media (prefers-reduced-motion:reduce){.pop,.up,.pc{animation:none;transition:none}}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useRef,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const D5W=340,D5H=500,D5CX=170,D5CY=195,D5R=140,D5SX=170,D5SY=442,D5SEG=[20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
+const d5Gauss=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random());
+function d5Hit(dx,dy){const r=Math.hypot(dx,dy);if(r>D5R)return{pts:0,label:'Miss'};if(r<5.2)return{pts:50,label:'Bullseye 50'};if(r<13.1)return{pts:25,label:'Outer bull 25'};
+ const a=Math.atan2(dx,-dy),v=D5SEG[Math.floor(((((a+Math.PI/20)%(2*Math.PI))+2*Math.PI)%(2*Math.PI))/(Math.PI/10))];
+ if(r>=D5R*.955)return{pts:v*2,label:'Double '+v+' = '+v*2};if(r>=D5R*.582&&r<=D5R*.63)return{pts:v*3,label:'Triple '+v+' = '+v*3};return{pts:v,label:'Single '+v};}
+const d5Point=(num,ring)=>{if(ring==='bull')return[D5CX,D5CY];if(ring==='obull')return[D5CX,D5CY+9];
+ const a=-Math.PI/2+D5SEG.indexOf(num)*Math.PI/10,r=ring==='triple'?.606:ring==='double'?.977:ring==='inner'?.34:.79;return[D5CX+Math.cos(a)*D5R*r,D5CY+Math.sin(a)*D5R*r];};
+const d5Fin=x=>x>=1&&x<=60&&(x<=20||(x<=40&&x%2===0)||x%3===0||x===25||x===50);
+function d5Target(rem){
+ if(rem>60)return d5Point(20,'triple');
+ if(rem===50)return d5Point(0,'bull');
+ if(rem%3===0&&rem/3<=20)return d5Point(rem/3,'triple');
+ if(rem%2===0&&rem/2<=20)return d5Point(rem/2,'double');
+ if(rem<=20)return d5Point(rem,'single');
+ if(rem===25)return d5Point(0,'obull');
+ for(let n=20;n>=1;n--)if(d5Fin(rem-n))return d5Point(n,'single');
+ return d5Point(20,'single');}
+function Darts501Game({stake,pool,payout,onEnd}){
+ const cv=useRef(),endRef=useRef();endRef.current=onEnd;
+ const G=useRef(null);
+ if(!G.current)G.current={score:[501,501],start:[501,501],turn:0,left:3,darts:[],phase:'aim',fly:null,drag:null,flash:null,over:false,ai:false,last:[null,null]};
+ const [ui,setUi]=useState({score:[501,501],turn:0,left:3,msg:'Your throw — put a finger below the board, swipe up, and release to flick.',over:false,last:[null,null],tick:0});
+ useEffect(()=>{
+  const g=G.current,c=cv.current,ctx=c.getContext('2d');ctx.scale(2,2);
+  const sync=m=>setUi(u=>({score:[...g.score],turn:g.turn,left:g.left,msg:m||u.msg,over:g.over,last:[...g.last],tick:u.tick+1}));
+  const flash=(t,col)=>{g.flash={t,col,life:55};};
+  const drift=(now)=>{const d=g.drag;if(!d)return[0,0];const t=(now-d.t0)/1000,A=4+Math.min(6,t*2);
+   return[A*(Math.sin(t*3.1+d.p1)+.6*Math.sin(t*5.3+d.p2)),A*(Math.cos(t*2.7+d.p2)+.6*Math.cos(t*4.9+d.p1))];};
+  const reticle=(now)=>{const d=g.drag;if(!d)return null;const[dx,dy]=drift(now);return[d.cx+dx,d.cy-70+dy];};
+  const throwDart=(x,y)=>{g.fly={x,y,f:0,who:g.turn};g.phase='flight';g.drag=null;};
+  const endTurn=(delay)=>setTimeout(()=>{if(g.over)return;const p=g.turn;g.darts=[];g.turn=1-p;g.left=3;g.start[g.turn]=g.score[g.turn];g.phase=g.turn===0?'aim':'ai';g.ai=false;
+   sync(g.turn===0?'Your throw — swipe up from below the board and release.':'Chidi O.\'s turn…');},delay);
+  const land=()=>{const f=g.fly,p=f.who,hit=d5Hit(f.x-D5CX,f.y-D5CY);g.fly=null;g.darts.push({x:f.x,y:f.y,p});g.left--;const ns=g.score[p]-hit.pts,who=p?'Chidi O.':'You';
+   if(ns<0){g.score[p]=g.start[p];g.last[p]='BUST';flash('BUST!','#F87171');g.phase='resolve';sync(who+' threw '+hit.label+' → BUST. Score resets to '+g.start[p]+'.');endTurn(1300);return;}
+   g.score[p]=ns;
+   if(ns===0){g.over=true;g.phase='resolve';flash('CHECKOUT!','#4ADE80');sync(who+(p?' checked out!':' checked out — you win!'));setTimeout(()=>endRef.current(p===0?1:2),2400);return;}
+   flash(hit.label,hit.pts>=40?'#FFC83D':'#fff');
+   if(g.left===0){g.last[p]=g.start[p]-ns;g.phase='resolve';sync(who+' threw '+hit.label+'. Turn total '+g.last[p]+', '+ns+' left.');endTurn(1200);}
+   else{g.phase=p===0?'aim':'ai';g.ai=false;sync(who+' hit '+hit.label+' — '+ns+' left, '+g.left+' dart'+(g.left>1?'s':'')+' to go.');}};
+  const aiThrow=()=>{if(g.over||g.turn!==1||g.phase!=='ai')return;const[tx,ty]=d5Target(g.score[1]);throwDart(tx+d5Gauss()*13,ty+d5Gauss()*13);};
+  const dartSprite=(x,y,col,s=1)=>{ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.strokeStyle='#CBD5E1';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(5,15);ctx.stroke();
+   ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(4,10);ctx.lineTo(12,12);ctx.lineTo(9,24);ctx.lineTo(3,19);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(0,0,0,.4)';ctx.lineWidth=.8;ctx.stroke();ctx.restore();};
+  const ang=i=>-Math.PI/2+i*Math.PI/10;
+  const ring=(i,r0,r1,col)=>{ctx.beginPath();ctx.arc(D5CX,D5CY,r1,ang(i)-Math.PI/20,ang(i)+Math.PI/20);ctx.arc(D5CX,D5CY,r0,ang(i)+Math.PI/20,ang(i)-Math.PI/20,true);ctx.closePath();ctx.fillStyle=col;ctx.fill();};
+  const draw=(now)=>{
+   ctx.fillStyle='#10201A';ctx.fillRect(0,0,D5W,D5H);
+   const bgr=ctx.createRadialGradient(D5CX,D5CY,10,D5CX,D5CY,D5R+40);bgr.addColorStop(0,'#1d3a2e');bgr.addColorStop(1,'#10201A');ctx.fillStyle=bgr;ctx.fillRect(0,0,D5W,D5H);
+   ctx.beginPath();ctx.arc(D5CX,D5CY+4,D5R+27,0,7);ctx.fillStyle='rgba(0,0,0,.45)';ctx.fill();
+   ctx.beginPath();ctx.arc(D5CX,D5CY,D5R+26,0,7);ctx.fillStyle='#0B0F14';ctx.fill();ctx.strokeStyle='#374151';ctx.lineWidth=2;ctx.stroke();
+   for(let i=0;i<20;i++){ring(i,13.1,D5R,i%2?'#F3E7C4':'#161616');ring(i,D5R*.955,D5R,i%2?'#16A34A':'#DC2626');ring(i,D5R*.582,D5R*.63,i%2?'#16A34A':'#DC2626');
+    ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(D5SEG[i],D5CX+Math.cos(ang(i))*(D5R+14),D5CY+Math.sin(ang(i))*(D5R+14));}
+   ctx.strokeStyle='rgba(203,213,225,.75)';ctx.lineWidth=.7;for(let i=0;i<20;i++){const a=ang(i)-Math.PI/20;ctx.beginPath();ctx.moveTo(D5CX+Math.cos(a)*13.1,D5CY+Math.sin(a)*13.1);ctx.lineTo(D5CX+Math.cos(a)*D5R,D5CY+Math.sin(a)*D5R);ctx.stroke();}
+   [D5R,D5R*.955,D5R*.63,D5R*.582,13.1,5.2].forEach(r=>{ctx.beginPath();ctx.arc(D5CX,D5CY,r,0,7);ctx.stroke();});
+   ctx.beginPath();ctx.arc(D5CX,D5CY,13.1,0,7);ctx.fillStyle='#16A34A';ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(D5CX,D5CY,5.2,0,7);ctx.fillStyle='#DC2626';ctx.fill();ctx.stroke();
+   g.darts.forEach(d=>dartSprite(d.x,d.y,d.p?'#60A5FA':'#FFC83D'));
+   ctx.fillStyle='rgba(255,255,255,.07)';ctx.fillRect(0,352,D5W,D5H-352);ctx.setLineDash([6,6]);ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(14,358);ctx.lineTo(D5W-14,358);ctx.stroke();ctx.setLineDash([]);
+   ctx.fillStyle='rgba(255,255,255,.5)';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.fillText('THROW ZONE — SWIPE UP TOWARD THE BOARD',D5CX,374);
+   if(g.phase==='aim'||g.phase==='ai')dartSprite(D5SX-2,D5SY-14,g.turn?'#60A5FA':'#FFC83D',1.4);
+   const rt=g.phase==='aim'?reticle(now):null;
+   if(rt){ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(rt[0],rt[1],9,0,7);ctx.moveTo(rt[0]-16,rt[1]);ctx.lineTo(rt[0]-4,rt[1]);ctx.moveTo(rt[0]+4,rt[1]);ctx.lineTo(rt[0]+16,rt[1]);ctx.moveTo(rt[0],rt[1]-16);ctx.lineTo(rt[0],rt[1]-4);ctx.moveTo(rt[0],rt[1]+4);ctx.lineTo(rt[0],rt[1]+16);ctx.stroke();
+    ctx.setLineDash([3,5]);ctx.strokeStyle='rgba(255,200,61,.6)';ctx.beginPath();ctx.moveTo(D5SX,D5SY-14);ctx.lineTo(rt[0],rt[1]);ctx.stroke();ctx.setLineDash([]);}
+   if(g.fly){const f=g.fly,t=Math.min(1,f.f/14),e=1-(1-t)*(1-t),x=D5SX+(f.x-D5SX)*e,y=D5SY-14+(f.y-(D5SY-14))*e;dartSprite(x,y,f.who?'#60A5FA':'#FFC83D',1.4-.4*e);}
+   if(g.flash&&g.flash.life>0){const f=g.flash;ctx.globalAlpha=Math.min(1,f.life/18);ctx.fillStyle=f.col;ctx.font='800 24px sans-serif';ctx.textAlign='center';ctx.strokeStyle='rgba(0,0,0,.6)';ctx.lineWidth=4;ctx.strokeText(f.t,D5CX,D5CY+D5R+62);ctx.fillText(f.t,D5CX,D5CY+D5R+62);ctx.globalAlpha=1;f.life--;}};
+  let raf,last=performance.now(),acc=0;
+  const loop=now=>{acc+=Math.min(now-last,100);last=now;while(acc>=16.67){acc-=16.67;if(g.fly){g.fly.f++;if(g.fly.f>=14)land();}}
+   if(g.phase==='ai'&&!g.ai&&!g.over){g.ai=true;setTimeout(aiThrow,950);}
+   draw(now);raf=requestAnimationFrame(loop);};
+  raf=requestAnimationFrame(loop);
+  const pos=e=>{const r=c.getBoundingClientRect();return[(e.clientX-r.left)*D5W/r.width,(e.clientY-r.top)*D5H/r.height];};
+  c.onpointerdown=e=>{if(g.phase!=='aim'||g.over)return;const[x,y]=pos(e);if(y<350){sync('Start your swipe in the throw zone below the board.');return;}c.setPointerCapture(e.pointerId);g.drag={sx:x,sy:y,cx:x,cy:y,t0:performance.now(),p1:Math.random()*6.3,p2:Math.random()*6.3};};
+  c.onpointermove=e=>{if(!g.drag)return;const[x,y]=pos(e);g.drag.cx=x;g.drag.cy=y;};
+  c.onpointerup=e=>{const d=g.drag;if(!d||g.phase!=='aim'||g.over){g.drag=null;return;}const[x,y]=pos(e);d.cx=x;d.cy=y;const rt=reticle(performance.now());
+   if(d.sy-y>35&&rt)throwDart(rt[0],rt[1]);else{g.drag=null;sync('Swipe UP toward the board, then release to throw.');}};
+  c.onpointercancel=()=>{g.drag=null;};
+  return()=>cancelAnimationFrame(raf);
+ },[]);
+ const card=(p,name)=>d('flex-1 rounded-2xl bg-[#12231B] px-3 py-2 text-white transition '+(ui.turn===p&&!ui.over?'ring-2 ring-[#FFC83D]':'opacity-75'),
+  d('flex items-center justify-between',d('text-sm font-extrabold',name),ui.turn===p&&!ui.over&&d('flex gap-1',...[0,1,2].map(i=>h('span',{key:i,className:'h-2.5 w-2.5 rounded-full',style:{background:i<ui.left?'#FFC83D':'rgba(255,255,255,.2)'}})))),
+  d('text-3xl font-extrabold leading-none tabular-nums',ui.score[p]),d('mt-0.5 text-[10px] text-white/60','Last turn: '+(ui.last[p]===null?'—':ui.last[p])));
+ return d('p-3 space-y-2',
+  d('flex items-center justify-between gap-2 rounded-2xl bg-[#12231B] px-3 py-2 text-white',d('flex items-center gap-1.5 text-sm font-extrabold','🔒 Escrow '+money(pool)),d('text-right text-[10px] leading-tight text-white/70',d('','Stake '+money(stake)+' each'),d('text-xs font-extrabold text-[#FFC83D]','Winner gets '+money(payout)))),
+  d('flex items-center gap-2',card(0,'You'),d('text-center text-[10px] font-extrabold text-[#5C7467]','501'),card(1,'Chidi O.')),
+  d('relative',h('canvas',{ref:cv,width:D5W*2,height:D5H*2,style:{width:'100%',height:'auto',touchAction:'none',borderRadius:20,display:'block'},'aria-label':'Dartboard'}),
+   ui.over&&d('pop absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-black/70',d('px-6 text-center text-xl font-extrabold text-white',ui.msg))),
+  d('text-center text-sm font-semibold text-white',ui.msg));
+}
+
+const stamp=()=>new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'}),Lg=(mid,label,amt,kind)=>({id:Math.random().toString(36).slice(2),mid,t:stamp(),label,amt,kind});
+function App(){
+ const [bal,setBal]=useState(25000),[led,setLed]=useState([]),[mid,setMid]=useState(0),[stake,setStake]=useState(1000),[scr,setScr]=useState('start'),[res,setRes]=useState(null),[before,setBefore]=useState(0),[rules,setRules]=useState(false);
+ const pool=stake*2,rake=pool*.05,payout=pool-rake;
+ const begin=()=>{if(bal<stake)return;const m=mid+1;setMid(m);setBefore(bal);setBal(b=>b-stake);setLed(l=>[Lg(m,'AI stake locked in escrow',stake,'opp'),Lg(m,'Your stake locked in escrow',-stake,'lock'),...l]);setRes(null);setScr('game');};
+ const done=w=>{const m=mid;
+  if(w===1){setBal(b=>b+payout);setLed(l=>[Lg(m,'Payout credited to your wallet',payout,'release'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match won · escrow pool '+money(pool),0,'info'),...l]);}
+  else setLed(l=>[Lg(m,'Payout released to AI',payout,'opp'),Lg(m,'Platform service fee (5%)',-rake,'rake'),Lg(m,'Match lost · escrow pool '+money(pool),0,'info'),...l]);
+  setRes(w);};
+ const shell=(...k)=>d('mx-auto flex min-h-screen max-w-[480px] flex-col gap-2 px-2 pb-4 pt-3 relative',...k);
+ if(scr==='start')return shell(d('flex flex-1 flex-col items-center justify-center gap-5 px-3 py-8 text-center',
+  d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','DARTS 501'),d('text-sm text-white/80','Race from 501 to exactly zero. Flick 3 darts a turn, fight the hand-shake, and don’t bust.'),
+  d('flex w-full items-center justify-between rounded-2xl bg-white/10 px-4 py-3',d('text-left',d('text-[11px] font-bold text-white/60','WALLET'),d('text-2xl font-extrabold',money(bal))),h('button',{onClick:()=>setBal(b=>b+5000),className:'rounded-full bg-[#FFC83D] px-3 py-1.5 text-xs font-extrabold text-[#12231B]'},'+ Top up ₦5,000')),
+  d('w-full rounded-3xl bg-white/10 p-4',d('mb-2 text-xs font-bold text-white/70','CHOOSE YOUR STAKE'),
+   d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,disabled:q>bal,onClick:()=>setStake(q),className:'rounded-xl border-2 py-3 text-sm font-extrabold disabled:opacity-30 '+(stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+   d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+  h('button',{onClick:begin,disabled:bal<stake,className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97] disabled:opacity-40'},bal<stake?'Top up to play':'Lock '+money(stake)+' & Play')));
+ const mine=led.filter(x=>x.mid===mid).reverse();
+ return shell(
+  d('rounded-[28px] bg-[#F2F6F3] text-[#12231B]',h(Darts501Game,{key:mid,stake,pool,payout,onEnd:done})),
+  res!==null&&d('fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-black/75 p-4',d('pop my-auto w-full max-w-[420px] rounded-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+   d('text-center',d('text-xs font-extrabold tracking-widest text-[#5C7467]','LEDGER UPDATE'),d('mt-1 text-5xl',res===1?'🏆':'😬'),d('text-2xl font-extrabold',res===1?'You checked out!':'Chidi O. wins'),d('text-sm text-[#5C7467]',res===1?'Winner takes the escrow pool':'Chidi O. reached zero first')),
+   d('mt-3 space-y-1.5 rounded-2xl bg-[#EAF3ED] p-4 text-sm',...[['Escrow pool (2 × '+money(stake)+')',money(pool)],['Platform fee (5%)','−'+money(rake)],[res===1?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+   d('mt-3 divide-y divide-[#EDF2EE] rounded-2xl border border-[#E1EAE4] bg-white px-3',...mine.map(x=>d('flex items-start justify-between gap-3 py-2',d('min-w-0',d('text-[13px] font-semibold leading-snug',x.label),d('text-[11px] text-[#7E9488]',x.t)),
+     d('whitespace-nowrap text-sm font-extrabold '+(x.kind==='info'||x.kind==='opp'?'text-[#7E9488]':x.kind==='rake'?'text-[#B7791F]':x.amt>0?'text-[#0E7C4B]':'text-[#C2410C]'),x.kind==='info'?'—':x.kind==='opp'?'('+money(x.amt)+')':(x.amt>0?'+':'−')+money(Math.abs(x.amt)))))),
+   d('mt-3 flex items-center justify-between rounded-2xl bg-[#12231B] px-4 py-3 text-white',d('text-xs font-bold text-white/70','MAIN WALLET'),d('text-base font-extrabold',money(before)+' → '+money(bal))),
+   h('button',{onClick:begin,disabled:bal<stake,className:'mt-3 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95 disabled:opacity-40'},bal<stake?'Top up to rematch':'Rematch · lock '+money(stake)),
+   h('button',{onClick:()=>{setScr('start');setRes(null);},className:'mt-1 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake / top up'))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

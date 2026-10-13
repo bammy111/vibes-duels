@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WHOT! – 1v1 Cash Wager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+:root{--bg:#06251B;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#04170F}}
+:root[data-theme="dark"]{--bg:#04170F}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
+body{margin:0;height:100%;background:var(--bg);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;color:#fff;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+.felt{background:radial-gradient(ellipse at 50% 40%,#12724F 0%,#0A4A34 55%,#06251B 100%)}
+@keyframes pop{0%{transform:scale(.6) rotate(-8deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+.pop{animation:pop .28s cubic-bezier(.2,1.4,.4,1)}
+@keyframes up{from{transform:translateY(100%)}to{transform:none}}
+.up{animation:up .25s ease-out}
+@keyframes pulse2{0%,100%{box-shadow:0 0 0 0 rgba(255,200,61,.7)}50%{box-shadow:0 0 0 10px rgba(255,200,61,0)}}
+.glow{animation:pulse2 1.3s infinite}
+@media (prefers-reduced-motion:reduce){.pop,.up,.glow{animation:none}}
+.hand::-webkit-scrollbar{display:none}
+button:focus-visible{outline:3px solid #FFC83D;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root" style="height:100%"></div>
+<script>
+const {useState,useEffect}=React,h=React.createElement;
+const d=(c,...k)=>h('div',{className:c},...k);
+const money=n=>'₦'+Math.round(n).toLocaleString('en-NG');
+const COL={circle:'#E11D48',triangle:'#16A34A',cross:'#2563EB',star:'#D97706'};
+const SH={circle:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',triangle:'M12 3 22 21H2z',cross:'M9 2h6v7h7v6h-7v7H9v-7H2V9h7z',star:'M12 2l2.9 6.6 7.1.7-5.4 4.7 1.6 7L12 17.3 5.8 21l1.6-7L2 9.3l7.1-.7z'};
+const NAMES={circle:'Circles',triangle:'Triangles',cross:'Crosses',star:'Stars'};
+const Shape=({s,z,c})=>h('svg',{viewBox:'0 0 24 24',width:z,height:z,fill:c||COL[s],'aria-hidden':true},h('path',{d:SH[s]}));
+const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+function makeDeck(){const dk=[];let id=0;['circle','triangle','cross'].forEach(s=>{for(let n=1;n<=14;n++)dk.push({id:id++,s,n});});for(let n=1;n<=8;n++)dk.push({id:id++,s:'star',n});for(let i=0;i<5;i++)dk.push({id:id++,s:'whot',n:20});return dk;}
+const label=c=>c.s==='whot'?'WHOT 20':c.n+' of '+c.s+'s';
+function deal(stake){const dk=shuffle(makeDeck());const hands=[dk.splice(0,4),dk.splice(0,4)];const k=dk.findIndex(c=>![1,2,5,8,14,20].includes(c.n));const first=dk.splice(k,1)[0];
+ return{phase:'play',hands,draw:dk,discard:[first],turn:0,pending:null,request:null,pick:null,msg:'Match the shape or number. Tap a glowing card!',winner:null,stake};}
+const clone=s=>({...s,hands:[[...s.hands[0]],[...s.hands[1]]],draw:[...s.draw],discard:[...s.discard]});
+function drawN(st,who,k){let got=0;for(let i=0;i<k;i++){if(!st.draw.length){if(st.discard.length<=1)break;const top=st.discard.pop();st.draw=shuffle(st.discard);st.discard=[top];}st.hands[who].push(st.draw.pop());got++;}return got;}
+function playable(st,c){const top=st.discard[st.discard.length-1];if(st.pending)return c.n===st.pending.n;if(c.s==='whot')return true;if(st.request)return c.s===st.request;return c.s===top.s||c.n===top.n;}
+function play(s,who,id,req){
+ const st=clone(s),hand=st.hands[who],c=hand.splice(hand.findIndex(c=>c.id===id),1)[0];
+ st.discard.push(c);st.pick=null;st.request=c.s==='whot'?req:null;
+ const nm=who?'AI':'You',op=who?'You':'AI';let msg=nm+' played '+label(c)+'. ',next=1-who;
+ if(!hand.length){st.phase='over';st.winner=who;st.msg=nm+' played the last card!';return st;}
+ if(c.n===2||c.n===5){st.pending={n:c.n,pick:(st.pending?st.pending.pick:0)+(c.n===2?2:3)};msg+=op+' must pick '+st.pending.pick+' or counter with a '+c.n+'.';}
+ else if(c.n===1){next=who;msg+='Hold On — '+nm+' go again.';}
+ else if(c.n===8){next=who;msg+='Suspension! '+op+' skip a turn.';}
+ else if(c.n===14){drawN(st,1-who,1);next=who;msg+='General Market — '+op+' pick 1, '+nm+' go again.';}
+ else if(c.s==='whot'){msg+=nm+' requests '+NAMES[req]+'.';}
+ st.turn=next;st.msg=msg;return st;}
+function drawTurn(s,who){const st=clone(s),k=st.pending?st.pending.pick:1,got=drawN(st,who,k);st.pending=null;st.msg=(who?'AI':'You')+' picked '+got+(got===1?' card':' cards')+'.';st.turn=1-who;return st;}
+function ai(st){const hand=st.hands[1],opts=hand.filter(c=>playable(st,c));if(!opts.length)return{draw:true};
+ const pr=n=>({14:0,8:1,1:2,2:3,5:4,20:9}[n]??6),cnt={};hand.forEach(c=>{if(c.s!=='whot')cnt[c.s]=(cnt[c.s]||0)+1;});
+ opts.sort((a,b)=>pr(a.n)-pr(b.n)||(cnt[b.s]||0)-(cnt[a.s]||0));
+ const req=['circle','triangle','cross','star'].sort((a,b)=>(cnt[b]||0)-(cnt[a]||0))[0];return{id:opts[0].id,req};}
+
+const Card=({c,w=64,onClick,ok,dim,back,cls=''})=>{
+ const H=w*1.5,base='relative shrink-0 rounded-xl select-none transition-transform '+cls+(ok?' -translate-y-3 glow ':'')+(dim?' opacity-50 ':''),
+  st={width:w,height:H,boxShadow:'0 3px 8px rgba(0,0,0,.35)'};
+ let body;
+ if(back)body=h('div',{className:base,style:{...st,background:'#C8102E',border:'3px solid #fff'}},d('absolute inset-1.5 rounded-lg grid place-items-center border-2 border-[#FFC83D]/70',h('span',{style:{fontSize:w*.26,color:'#FFC83D',fontWeight:800,letterSpacing:1}},'WHOT')));
+ else if(c.s==='whot')body=h('div',{className:base+' grid place-items-center text-center',style:{...st,background:'linear-gradient(150deg,#7C3AED,#DB2777)',border:'3px solid #fff'}},d('leading-none',h('div',{style:{fontSize:w*.4,fontWeight:800,color:'#FFC83D'}},'20'),h('div',{style:{fontSize:w*.19,fontWeight:800,color:'#fff',letterSpacing:1}},'WHOT')));
+ else body=h('div',{className:base,style:{...st,background:'#FFFBF0',border:'3px solid '+COL[c.s]}},
+   d('absolute top-1 left-1.5 flex flex-col items-center leading-none',h('span',{style:{fontSize:w*.3,fontWeight:800,color:COL[c.s]}},c.n),h(Shape,{s:c.s,z:w*.2})),
+   d('absolute inset-0 grid place-items-center',h(Shape,{s:c.s,z:w*.5})),
+   d('absolute bottom-1 right-1.5 flex flex-col items-center leading-none rotate-180',h('span',{style:{fontSize:w*.3,fontWeight:800,color:COL[c.s]}},c.n),h(Shape,{s:c.s,z:w*.2})));
+ return onClick?h('button',{onClick,'aria-label':back?'Draw pile':label(c),className:'shrink-0 active:scale-95 transition-transform'},body):body;};
+
+function App(){
+ const [st,setSt]=useState({phase:'start',stake:1000});
+ const [rules,setRules]=useState(false);
+ useEffect(()=>{if(st.phase!=='play'||st.turn!==1)return;
+  const t=setTimeout(()=>setSt(s=>{if(s.phase!=='play'||s.turn!==1)return s;const m=ai(s);return m.draw?drawTurn(s,1):play(s,1,m.id,m.req);}),1150);return()=>clearTimeout(t);},[st]);
+ const pool=st.stake*2,rake=pool*.05,payout=pool-rake;
+ const shell=(...k)=>d('mx-auto flex h-full max-w-[470px] flex-col felt overflow-hidden relative',...k);
+
+ if(st.phase==='start')return shell(d('flex-1 flex flex-col items-center justify-center gap-5 px-6 text-center',
+   d('text-6xl font-extrabold tracking-tight text-[#FFC83D]','WHOT!'),
+   d('text-sm text-white/80','Nigeria’s favourite card game. First to empty their hand takes the pot.'),
+   d('w-full rounded-3xl bg-black/30 p-4',d('text-xs font-bold text-white/70 mb-2','CHOOSE YOUR STAKE'),
+     d('grid grid-cols-4 gap-2',...[500,1000,2000,5000].map(q=>h('button',{key:q,onClick:()=>setSt({phase:'start',stake:q}),className:'rounded-xl py-3 text-sm font-extrabold border-2 '+(st.stake===q?'bg-[#FFC83D] text-[#12231B] border-[#FFC83D]':'border-white/25')},money(q)))),
+     d('mt-3 text-xs text-white/70','Escrow pool '+money(pool)+' · winner receives '+money(payout)+' after the 5% fee')),
+   h('button',{onClick:()=>setSt(deal(st.stake)),className:'w-full rounded-2xl bg-[#FFC83D] py-4 text-lg font-extrabold text-[#12231B] active:scale-[.97]'},'Lock '+money(st.stake)+' & Deal'),
+   h('button',{onClick:()=>setRules(true),className:'text-sm underline text-white/70'},'How to play'),
+   rules&&Rules(()=>setRules(false))));
+
+ const top=st.discard[st.discard.length-1],mine=st.phase==='play'&&st.turn===0;
+ const canPlay=st.hands[0].some(c=>playable(st,c));
+ const tap=c=>{if(!mine||!playable(st,c))return;if(c.s==='whot')setSt({...st,pick:c.id});else setSt(play(st,0,c.id));};
+ const drawIt=()=>{if(mine)setSt(drawTurn(st,0));};
+ return shell(
+  d('flex items-center justify-between px-4 pt-3',
+   d('flex items-center gap-2 rounded-full bg-black/35 px-3 py-1.5 text-xs font-extrabold',h('span',null,'🔒'),'Escrow '+money(pool),h('span',{className:'font-semibold text-white/60'},'· '+money(st.stake)+' each')),
+   h('button',{onClick:()=>setRules(true),'aria-label':'Rules',className:'h-9 w-9 rounded-full bg-black/35 font-extrabold'},'?')),
+  d('flex items-center justify-center gap-3 pt-3',d('h-9 w-9 rounded-full bg-[#C2410C] grid place-items-center font-extrabold','AI'),
+   d('flex -space-x-8',...st.hands[1].slice(0,10).map(c=>h(Card,{key:c.id,back:true,w:34}))),d('text-sm font-extrabold','×'+st.hands[1].length)),
+  d('flex-1 flex flex-col items-center justify-center gap-3',
+   d('flex items-center gap-6',
+    d('flex flex-col items-center gap-1',h(Card,{back:true,w:78,onClick:mine?drawIt:undefined,ok:mine&&!canPlay}),d('text-[11px] font-bold text-white/70',(st.pending&&mine?'Pick '+st.pending.pick:'Draw')+' · '+st.draw.length)),
+    d('relative',h(Card,{key:top.id,c:top,w:92,cls:'pop'}),
+     st.request&&d('absolute -top-3 -right-3 rounded-full bg-white p-1.5 shadow-lg pop',h(Shape,{s:st.request,z:22})))),
+   st.request&&d('rounded-full bg-black/40 px-3 py-1 text-xs font-bold',NAMES[st.request]+' requested'),
+   st.pending&&d('rounded-full bg-[#DC2626] px-4 py-1.5 text-sm font-extrabold animate-pulse','Pick '+st.pending.pick+' pending — counter with a '+st.pending.n+' or draw')),
+  d('mx-4 mb-2 rounded-2xl bg-black/35 px-4 py-2.5 text-center text-sm font-semibold min-h-[3rem] flex items-center justify-center',st.msg),
+  d('pb-3',d('px-4 pb-1 text-xs font-extrabold '+(mine?'text-[#FFC83D]':'text-white/50'),mine?(canPlay?'YOUR TURN':'YOUR TURN — no match, tap the draw pile'):st.phase==='play'?'AI is thinking…':''),
+   h('div',{className:'hand flex gap-2 overflow-x-auto px-4 pt-4 pb-1',style:style0},...st.hands[0].map(c=>h(Card,{key:c.id,c,w:68,onClick:()=>tap(c),ok:mine&&playable(st,c),dim:mine&&!playable(st,c)})))),
+  st.pick!=null&&d('absolute inset-0 z-20 flex items-end bg-black/60',d('up w-full rounded-t-[28px] bg-[#FFFBF0] p-5 text-[#12231B]',
+    d('text-center text-lg font-extrabold mb-1','WHOT! Request a shape'),d('text-center text-xs text-[#5C7467] mb-4','Your opponent must play this shape or a 20.'),
+    d('grid grid-cols-2 gap-3',...['circle','triangle','cross','star'].map(s=>h('button',{key:s,onClick:()=>setSt(play(st,0,st.pick,s)),className:'flex items-center justify-center gap-2 rounded-2xl border-2 py-4 font-extrabold active:scale-95',style:{borderColor:COL[s]}},h(Shape,{s,z:28}),NAMES[s]))),
+    h('button',{onClick:()=>setSt({...st,pick:null}),className:'mt-3 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Cancel'))),
+  st.phase==='over'&&d('absolute inset-0 z-30 grid place-items-center bg-black/70 p-5',d('pop w-full rounded-[28px] bg-[#FFFBF0] p-6 text-center text-[#12231B]',
+    d('text-5xl',st.winner===0?'🏆':'😬'),d('mt-2 text-2xl font-extrabold',st.winner===0?'You won!':'AI wins this one'),
+    d('mt-4 rounded-2xl bg-[#EAF3ED] p-4 text-sm space-y-1.5',
+     ...[['Escrow pool',money(pool)],['Platform fee (5%)','−'+money(rake)],[st.winner===0?'Your payout':'AI payout',money(payout)]].map((r,i)=>d('flex justify-between font-semibold '+(i===2?'border-t border-[#C9DBD0] pt-2 text-base font-extrabold text-[#0E7C4B]':''),d('',r[0]),d('',r[1])))),
+    d('mt-2 text-sm font-bold '+(st.winner===0?'text-[#0E7C4B]':'text-[#C2410C]'),st.winner===0?'Net win '+money(payout-st.stake)+' · paid to your wallet':'You lost your '+money(st.stake)+' stake'),
+    h('button',{onClick:()=>setSt(deal(st.stake)),className:'mt-4 w-full rounded-2xl bg-[#0E7C4B] py-3.5 font-extrabold text-white active:scale-95'},'Rematch · lock '+money(st.stake)),
+    h('button',{onClick:()=>setSt({phase:'start',stake:st.stake}),className:'mt-2 w-full py-2 text-sm font-semibold text-[#5C7467]'},'Change stake'))),
+  rules&&Rules(()=>setRules(false)));
+}
+const style0={scrollSnapType:'x proximity'};
+function Rules(close){return d('absolute inset-0 z-40 flex items-end bg-black/60',d('up max-h-[85%] w-full overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5 text-left text-[#12231B]',
+ d('flex items-center justify-between mb-2',d('text-lg font-extrabold','How to play'),h('button',{onClick:close,className:'h-8 w-8 rounded-full bg-[#EAF3ED] font-bold','aria-label':'Close'},'✕')),
+ d('space-y-2 text-sm',...[['Goal','Be first to play all your cards. Match the top card by shape or number.'],['1 · Hold On','Play again.'],['2 · Pick Two','Opponent picks 2, or counters with another 2 to stack.'],['5 · Pick Three','Opponent picks 3, or counters with another 5 to stack.'],['8 · Suspension','Opponent skips; you play again.'],['14 · General Market','Opponent picks 1; you play again.'],['WHOT 20','Plays on anything. Request a shape — the next player must follow it or play a 20.'],['No match?','Tap the draw pile to pick one card and pass.'],['Payout','Winner gets 95% of the pool; 5% is the platform fee.']].map(r=>d('',h('b',null,r[0]+': '),r[1])))));}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>
